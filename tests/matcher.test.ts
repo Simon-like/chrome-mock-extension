@@ -186,7 +186,14 @@ describe('findMatchingRule', () => {
     const store: MockStore = {
       ...storeWith([rule]),
       groups: [
-        { id: 'g1', name: '组', enabled: false, exclusive: false, defaultShellTemplateId: null },
+        {
+          id: 'g1',
+          name: '组',
+          enabled: false,
+          projectId: null,
+          collapsed: false,
+          defaultShellTemplateId: null,
+        },
       ],
     };
     expect(findMatchingRule(store, req('https://a.com/api/x'))).toBeNull();

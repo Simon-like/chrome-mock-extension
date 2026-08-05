@@ -4,32 +4,73 @@
  * 铁律：所有对 store 的修改，只能通过 dispatch 一个 Command。
  *
  * 为什么值得这层间接：来源不同的操作（Popup 点开关、Options 编辑、
- * DevTools 转 Mock、V2 的 AI 通过 MCP 下发）必须走同一条路，
+ * DevTools 转 Mock、未来 AI 通过 MCP 下发）必须走同一条路，
  * 否则校验、副作用、广播逻辑要各写一遍，状态不同步是必然的。
  *
  * 附带好处：Command 是可序列化对象，天然支持 postMessage 传输、
- * 操作日志、撤销重做，以及 V2 里把 MCP 工具调用直接翻译成 Command。
- *
- * 详见设计文档 05 §3.4。
+ * 操作日志、撤销重做，以及把 MCP 工具调用直接翻译成 Command。
  */
 
-import type { Group, Rule, RuleDraft, Settings } from '../types.js';
+import type { Group, Project, ResponseSpec, Rule, RuleDraft, Settings } from '../types.js';
 
 export type Command =
   // ── 规则 ──
   | { type: 'CREATE_RULE'; payload: { draft: RuleDraft } }
-  | { type: 'UPDATE_RULE'; payload: { id: string; patch: Partial<Omit<Rule, 'id' | 'meta'>> } }
+  | {
+      type: 'UPDATE_RULE';
+      payload: {
+        id: string;
+        patch: Partial<Omit<Rule, 'id' | 'meta' | 'variants' | 'activeVariantId'>>;
+      };
+    }
   | { type: 'DELETE_RULE'; payload: { id: string } }
   | { type: 'TOGGLE_RULE'; payload: { id: string; enabled: boolean } }
   | { type: 'REORDER_RULE'; payload: { id: string; toIndex: number } }
   | { type: 'DUPLICATE_RULE'; payload: { id: string } }
-  | { type: 'MOVE_RULE_TO_GROUP'; payload: { id: string; groupId: string | null; toIndex?: number } }
+  | {
+      type: 'MOVE_RULE';
+      payload: {
+        id: string;
+        projectId?: string | null;
+        groupId?: string | null;
+        toIndex?: number;
+      };
+    }
+  // ── 变体 ──
+  /** 切换当前生效的变体 —— 最高频操作 */
+  | { type: 'SET_ACTIVE_VARIANT'; payload: { ruleId: string; variantId: string } }
+  | {
+      type: 'CREATE_VARIANT';
+      payload: {
+        ruleId: string;
+        name: string;
+        /** 缺省则复制当前生效变体的响应 */
+        response?: ResponseSpec;
+        /** 建完是否立刻切过去，默认 true */
+        activate?: boolean;
+      };
+    }
+  | {
+      type: 'UPDATE_VARIANT';
+      payload: {
+        ruleId: string;
+        variantId: string;
+        patch: { name?: string; response?: Partial<ResponseSpec> };
+      };
+    }
+  | { type: 'DELETE_VARIANT'; payload: { ruleId: string; variantId: string } }
+  | { type: 'REORDER_VARIANT'; payload: { ruleId: string; variantId: string; toIndex: number } }
+  // ── 项目 ──
+  | { type: 'CREATE_PROJECT'; payload: { name: string } }
+  | { type: 'UPDATE_PROJECT'; payload: { id: string; patch: Partial<Omit<Project, 'id'>> } }
+  /** 删除项目。其下分组与规则不删除，降级为全局/未归档 */
+  | { type: 'DELETE_PROJECT'; payload: { id: string } }
+  | { type: 'SET_ACTIVE_PROJECT'; payload: { id: string | null } }
   // ── 分组 ──
-  | { type: 'CREATE_GROUP'; payload: { name: string; exclusive?: boolean } }
+  | { type: 'CREATE_GROUP'; payload: { name: string; projectId?: string | null } }
   | { type: 'UPDATE_GROUP'; payload: { id: string; patch: Partial<Omit<Group, 'id'>> } }
   /** 删除分组。组内规则不删除，移到未分组 */
   | { type: 'DELETE_GROUP'; payload: { id: string } }
-  /** 启用互斥组时会自动关闭其他互斥组 —— 这就是场景切换 */
   | { type: 'TOGGLE_GROUP'; payload: { id: string; enabled: boolean } }
   | { type: 'REORDER_GROUP'; payload: { id: string; toIndex: number } }
   // ── 全局 ──

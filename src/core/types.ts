@@ -1,14 +1,15 @@
 /**
  * 规则数据模型 —— 整个系统的地基
  *
- * 对应设计文档 05 第 2 章。修改这里之前请先读那一章，
- * 尤其是几个关键决策的理由（body 为什么是 string、为什么单一 storage key）。
+ * 对应设计文档 05 第 2 章 与 08 号 PRD。修改前请先读那两份，
+ * 尤其是几个关键决策的理由（body 为什么是 string、为什么单一 storage key、
+ * 为什么是「规则持有多个变体」而非「多条规则共用一个 URL」）。
  *
  * 本文件属于 core 层，铁律：不允许出现 chrome.* / window.* / document.*
  */
 
-/** 当前 Schema 版本。加字段并需要迁移时才 +1（见 store/migrate.ts） */
-export const CURRENT_SCHEMA_VERSION = 1;
+/** 当前 Schema 版本。v2 引入项目层与变体 */
+export const CURRENT_SCHEMA_VERSION = 2;
 
 export type HttpMethod =
   | 'GET'
@@ -42,10 +43,10 @@ export type UrlMode = 'contains' | 'wildcard' | 'regex';
  */
 export type RuleKind = 'override' | 'virtual';
 
-/** 响应体类型。MVP 只实现 static，其余为 V1 预留 */
+/** 响应体类型。MVP 只实现 static，其余为后续预留 */
 export type BodyType = 'static' | 'dynamic' | 'mockjs';
 
-/** 特殊网络行为（F11 场景预设，V1 用） */
+/** 特殊网络行为（F11 场景预设） */
 export type ResponseBehavior = 'normal' | 'timeout' | 'networkError';
 
 /** 规则从哪来的 —— 用于统计与调试 */
@@ -57,7 +58,10 @@ export interface MatchCondition {
   url: string;
   /** 空数组 = 匹配所有 method */
   methods: HttpMethod[];
-  /** 域名作用域（F15）。空数组 = 所有域名 */
+  /**
+   * 域名作用域（F15）。空数组 = 不限。
+   * 非空时【覆盖】所属项目的 hostScope（少数派例外场景）
+   */
   hosts: string[];
 }
 
@@ -73,10 +77,28 @@ export interface ResponseSpec {
   body: string;
   /** 套哪个响应外壳（F24）。null = 不套壳，body 即完整响应 */
   shellTemplateId: string | null;
-  /** 延迟模拟（F12）。MVP 恒为 0 */
+  /** 延迟模拟（F12） */
   delayMs: number;
   /** 特殊行为（F11）。缺省视为 normal */
   behavior?: ResponseBehavior;
+}
+
+/**
+ * 变体 —— 同一接口的一份响应
+ *
+ * 一条规则可以有多个变体（正常 / 空数据 / 报错 / 超长列表…），
+ * 同一时刻只有 activeVariantId 指向的那个生效。
+ *
+ * 为什么不用「多条规则共用一个 URL」来实现：那要靠「同一 URL 只启用一条」
+ * 的隐式约定维持，用户很容易两条都开着，然后困惑为什么生效的是上面那条
+ * （先到先得）。变体把「同一时刻只有一个」变成结构上的保证，配不错。
+ * 详见 08 号 PRD §2.1。
+ */
+export interface Variant {
+  id: string;
+  /** 正常 / 空数据 / 报错… */
+  name: string;
+  response: ResponseSpec;
 }
 
 export interface RuleMeta {
@@ -87,7 +109,6 @@ export interface RuleMeta {
    * 命中次数 —— 这不是统计癖，是诊断功能。
    * 注入式 mock 的改动不出现在 Network 面板，用户排查不生效问题时：
    * 命中数 0 = URL 没匹配上；命中数 >0 但页面没变 = 响应内容有问题。
-   * 详见设计文档 05 §2.3 决策四。
    */
   hitCount: number;
   lastHitAt: number | null;
@@ -97,12 +118,48 @@ export interface Rule {
   id: string;
   name: string;
   enabled: boolean;
-  /** 所属分组（F13）。MVP 恒为 null */
+  /** 所属分组。null = 未分组 */
   groupId: string | null;
+  /**
+   * 所属项目。null = 未归档。
+   * 与 groupId 冗余存储，因为规则可以「属于项目但不在任何分组」
+   */
+  projectId: string | null;
   kind: RuleKind;
   match: MatchCondition;
-  response: ResponseSpec;
+
+  /** 至少一个变体。不允许为空数组 */
+  variants: Variant[];
+  /** 当前生效的变体 id。必须指向 variants 中的某一个 */
+  activeVariantId: string;
+
   meta: RuleMeta;
+}
+
+/**
+ * 域名作用域
+ *
+ * 空 patterns = 不限域名（默认）—— 降低建项目的门槛，
+ * 不必先想清楚域名才能开始用。
+ */
+export interface HostScope {
+  mode: 'include' | 'exclude';
+  patterns: string[];
+}
+
+/**
+ * 项目 —— 最外层容器
+ *
+ * 它的独特价值是【绑定域名】。如果只是「更大的分组」，就没必要存在。
+ * 解决的问题：同一个 /api/user/info 路径在 A 系统和 B 系统含义完全不同，
+ * 有了项目就只配一次域名，而不是每条规则单独填。
+ */
+export interface Project {
+  id: string;
+  name: string;
+  hostScope: HostScope;
+  /** 项目级默认响应外壳，新建规则时自动带上 */
+  defaultShellTemplateId: string | null;
 }
 
 export interface Group {
@@ -110,16 +167,10 @@ export interface Group {
   name: string;
   /** 组开关：关掉则组内规则全部失效 */
   enabled: boolean;
-  /**
-   * 互斥组：同一时刻只允许一个互斥组处于启用状态。
-   *
-   * 这是「场景切换」的实现方式 —— 把「正常态 / 全空态 / 全错态」建成三个互斥组，
-   * 点一下就整体切换，不需要再引入独立的 Scenario 概念。
-   * 普通组（false）之间互不影响，可同时启用，用于按业务模块归拢规则。
-   */
-  exclusive: boolean;
+  /** 所属项目。null = 全局分组（不属于任何项目） */
+  projectId: string | null;
   /** UI 折叠状态。放在数据里是为了刷新后保持 */
-  collapsed?: boolean;
+  collapsed: boolean;
   defaultShellTemplateId: string | null;
 }
 
@@ -137,25 +188,29 @@ export interface Settings {
   captureEnabled: boolean;
   /** 请求流最多保留条数 */
   captureMaxCount: number;
-  /** MCP 读侧总开关（Q11 决策：默认开） */
+  /** 规则列表每页条数 */
+  pageSize: number;
+  /** MCP 读侧总开关 */
   aiReadEnabled: boolean;
-  /** 读侧域名白名单 —— Q11 的不可关闭措施之一 */
+  /** 读侧域名白名单 —— 不可关闭的措施之一 */
   aiHostWhitelist: string[];
 }
 
 /**
  * 存储根对象。chrome.storage.local 里只存这一个 key。
  * 单 key 的理由是原子性：SW 随时可能被杀，多 key 分开写会留下不一致的中间状态。
- * 详见设计文档 05 §2.3 决策二。
  */
 export interface MockStore {
   schemaVersion: number;
   /** 全局总开关（F4） */
   enabled: boolean;
-  rules: Rule[];
+  projects: Project[];
   groups: Group[];
+  rules: Rule[];
   shellTemplates: ShellTemplate[];
   settings: Settings;
+  /** 当前选中的项目。null = 查看全部 */
+  activeProjectId: string | null;
 }
 
 /** storage 里的 key 名 */
@@ -183,7 +238,11 @@ export interface MockResponse {
   behavior: ResponseBehavior;
 }
 
-/** 新建规则时的草稿：id 和 meta 由系统生成，调用方不填 */
-export type RuleDraft = Omit<Rule, 'id' | 'meta'> & {
+/** 新建规则时的草稿：id / meta / 变体 id 由系统生成 */
+export type RuleDraft = Omit<Rule, 'id' | 'meta' | 'variants' | 'activeVariantId'> & {
+  /** 变体草稿，id 可缺省 */
+  variants: Array<Omit<Variant, 'id'> & { id?: string }>;
+  /** 生效变体的【下标】，缺省为 0 */
+  activeVariantIndex?: number;
   meta?: Partial<RuleMeta>;
 };

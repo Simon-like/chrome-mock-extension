@@ -15,10 +15,15 @@
  */
 
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { createDefaultStore, createRuleDraft, materializeRule } from '../src/core/store/defaults.js';
+import {
+  createDefaultStore,
+  createResponseSpec,
+  createRuleDraft,
+  materializeRule,
+} from '../src/core/store/defaults.js';
 import { PAGE_CHANNEL } from '../src/shared/messages.js';
 import type { EngineSnapshot } from '../src/shared/messages.js';
-import type { Rule, RuleDraft } from '../src/core/types.js';
+import type { ResponseSpec, Rule, RuleDraft } from '../src/core/types.js';
 
 /** 记录注入层通过 postMessage 上报的事件 */
 const reported: Array<{ type: string; entry?: Record<string, unknown> }> = [];
@@ -34,6 +39,7 @@ function snapshotOf(rules: Rule[], enabled = true): EngineSnapshot {
     enabled,
     rules,
     groups: [],
+    projects: [],
     shellTemplates: def.shellTemplates,
     captureEnabled: false, // 关掉采集，避免真实 fetch 被调用
     revision: ++seq,
@@ -112,10 +118,7 @@ describe('fetch 拦截', () => {
         rule({
           name: 'goods',
           match: { urlMode: 'contains', url: '/api/goods', methods: [], hosts: [] },
-          response: {
-            ...createRuleDraft().response,
-            body: '{"list":[1,2,3]}',
-          },
+          variants: [{ name: '默认', response: createResponseSpec({ body: '{"list":[1,2,3]}' }) }],
         }),
       ]),
     );
@@ -141,7 +144,7 @@ describe('fetch 拦截', () => {
       snapshotOf([
         rule({
           match: { urlMode: 'contains', url: '/api/boom', methods: [], hosts: [] },
-          response: { ...createRuleDraft().response, status: 500, body: '{"err":1}' },
+          variants: [{ name: '默认', response: createResponseSpec({ status: 500, body: '{"err":1}' }) }],
         }),
       ]),
     );
@@ -155,7 +158,7 @@ describe('fetch 拦截', () => {
         [
           rule({
             match: { urlMode: 'contains', url: '/api/goods', methods: [], hosts: [] },
-            response: { ...createRuleDraft().response, body: '{"mocked":true}' },
+            variants: [{ name: '默认', response: createResponseSpec({ body: '{"mocked":true}' }) }],
           }),
         ],
         false,
@@ -173,7 +176,7 @@ describe('fetch 拦截', () => {
       snapshotOf([
         rule({
           match: { urlMode: 'contains', url: '/api/req-obj', methods: [], hosts: [] },
-          response: { ...createRuleDraft().response, body: '{"ok":1}' },
+          variants: [{ name: '默认', response: createResponseSpec({ body: '{"ok":1}' }) }],
         }),
       ]),
     );
@@ -186,7 +189,7 @@ describe('fetch 拦截', () => {
       snapshotOf([
         rule({
           match: { urlMode: 'contains', url: '/api/only-post', methods: ['POST'], hosts: [] },
-          response: { ...createRuleDraft().response, body: '{"posted":1}' },
+          variants: [{ name: '默认', response: createResponseSpec({ body: '{"posted":1}' }) }],
         }),
       ]),
     );
@@ -204,11 +207,8 @@ describe('fetch 拦截', () => {
       snapshotOf([
         rule({
           match: { urlMode: 'contains', url: '/api/shelled', methods: [], hosts: [] },
-          response: {
-            ...createRuleDraft().response,
-            body: '[7,8]',
-            shellTemplateId: 'shell-status-message-data',
-          },
+          variants: [{ name: '默认', response: createResponseSpec({ body: '[7,8]',
+            shellTemplateId: 'shell-status-message-data' }) }],
         }),
       ]),
     );
@@ -245,7 +245,7 @@ describe('XHR 拦截（axios 走这条）', () => {
       snapshotOf([
         rule({
           match: { urlMode: 'contains', url: '/api/xhr-prop', methods: [], hosts: [] },
-          response: { ...createRuleDraft().response, body: '{"via":"prop"}' },
+          variants: [{ name: '默认', response: createResponseSpec({ body: '{"via":"prop"}' }) }],
         }),
       ]),
     );
@@ -261,7 +261,7 @@ describe('XHR 拦截（axios 走这条）', () => {
       snapshotOf([
         rule({
           match: { urlMode: 'contains', url: '/api/xhr-listener', methods: [], hosts: [] },
-          response: { ...createRuleDraft().response, body: '{"via":"listener"}' },
+          variants: [{ name: '默认', response: createResponseSpec({ body: '{"via":"listener"}' }) }],
         }),
       ]),
     );
@@ -275,7 +275,7 @@ describe('XHR 拦截（axios 走这条）', () => {
       snapshotOf([
         rule({
           match: { urlMode: 'contains', url: '/api/xhr-headers', methods: [], hosts: [] },
-          response: { ...createRuleDraft().response, body: '{}' },
+          variants: [{ name: '默认', response: createResponseSpec({ body: '{}' }) }],
         }),
       ]),
     );
@@ -290,7 +290,7 @@ describe('XHR 拦截（axios 走这条）', () => {
       snapshotOf([
         rule({
           match: { urlMode: 'contains', url: '/api/xhr-401', methods: [], hosts: [] },
-          response: { ...createRuleDraft().response, status: 401, body: '{"msg":"过期"}' },
+          variants: [{ name: '默认', response: createResponseSpec({ status: 401, body: '{"msg":"过期"}' }) }],
         }),
       ]),
     );
@@ -305,7 +305,7 @@ describe('XHR 拦截（axios 走这条）', () => {
       snapshotOf([
         rule({
           match: { urlMode: 'contains', url: '/api/xhr-url', methods: [], hosts: [] },
-          response: { ...createRuleDraft().response, body: '{}' },
+          variants: [{ name: '默认', response: createResponseSpec({ body: '{}' }) }],
         }),
       ]),
     );
@@ -320,12 +320,12 @@ describe('XHR 拦截（axios 走这条）', () => {
         rule({
           name: 'a',
           match: { urlMode: 'contains', url: '/api/multi-a', methods: [], hosts: [] },
-          response: { ...createRuleDraft().response, body: '{"which":"a"}' },
+          variants: [{ name: '默认', response: createResponseSpec({ body: '{"which":"a"}' }) }],
         }),
         rule({
           name: 'b',
           match: { urlMode: 'contains', url: '/api/multi-b', methods: [], hosts: [] },
-          response: { ...createRuleDraft().response, status: 201, body: '{"which":"b"}' },
+          variants: [{ name: '默认', response: createResponseSpec({ status: 201, body: '{"which":"b"}' }) }],
         }),
       ]),
     );
@@ -348,7 +348,7 @@ describe('延迟模拟', () => {
       snapshotOf([
         rule({
           match: { urlMode: 'contains', url: '/api/slow', methods: [], hosts: [] },
-          response: { ...createRuleDraft().response, body: '{}', delayMs: 60 },
+          variants: [{ name: '默认', response: createResponseSpec({ body: '{}', delayMs: 60 }) }],
         }),
       ]),
     );
@@ -364,7 +364,7 @@ describe('上报', () => {
     const r = rule({
       name: '上报测试',
       match: { urlMode: 'contains', url: '/api/reported', methods: [], hosts: [] },
-      response: { ...createRuleDraft().response, body: '{"x":1}' },
+      variants: [{ name: '默认', response: createResponseSpec({ body: '{"x":1}' }) }],
     });
     await pushSnapshot(snapshotOf([r]));
 
@@ -387,7 +387,7 @@ describe('健壮性：引擎绝不能拖垮页面', () => {
         rule({
           name: '坏正则',
           match: { urlMode: 'regex', url: '[invalid(', methods: [], hosts: [] },
-          response: { ...createRuleDraft().response, body: '{}' },
+          variants: [{ name: '默认', response: createResponseSpec({ body: '{}' }) }],
         }),
       ]),
     );
@@ -403,7 +403,7 @@ describe('健壮性：引擎绝不能拖垮页面', () => {
       snapshotOf([
         rule({
           match: { urlMode: 'contains', url: '/api/bad-json', methods: [], hosts: [] },
-          response: { ...createRuleDraft().response, body: '{not json' },
+          variants: [{ name: '默认', response: createResponseSpec({ body: '{not json' }) }],
         }),
       ]),
     );

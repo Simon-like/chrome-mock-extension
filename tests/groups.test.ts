@@ -1,16 +1,16 @@
 /**
- * 分组与互斥组（场景切换）测试
+ * 项目、分组与域名作用域测试
  *
- * 互斥规则有三个触发入口 —— 切换组、新建互斥组、把普通组改成互斥组。
- * 散落在各处很容易漏掉其中一个，所以每个入口都要覆盖。
+ * v2 的容器层级：项目 → 分组 → 规则。两层都可选。
+ * 项目的独特价值是绑定域名，否则它只是「更大的分组」。
  */
 
 import { describe, expect, it } from 'vitest';
 import { reduce, type ReduceContext } from '../src/core/command/reducer.js';
 import { createDefaultStore, createRuleDraft } from '../src/core/store/defaults.js';
-import { findMatchingRule } from '../src/core/engine/matcher.js';
+import { findMatchingRule, matchHostScope } from '../src/core/engine/matcher.js';
 import { normalizeRequest } from '../src/core/engine/normalize.js';
-import { migrate } from '../src/core/store/migrate.js';
+import { buildResponse } from '../src/core/engine/responder.js';
 import type { MockStore } from '../src/core/types.js';
 
 function makeCtx(): ReduceContext {
@@ -18,267 +18,303 @@ function makeCtx(): ReduceContext {
   return { idFactory: () => `id-${++n}`, now: () => 1_700_000_000_000 };
 }
 
-function addGroup(store: MockStore, ctx: ReduceContext, name: string, exclusive = false) {
-  return reduce(store, { type: 'CREATE_GROUP', payload: { name, exclusive } }, ctx);
-}
+const addProject = (s: MockStore, ctx: ReduceContext, name: string) =>
+  reduce(s, { type: 'CREATE_PROJECT', payload: { name } }, ctx);
 
-function addRule(store: MockStore, ctx: ReduceContext, name: string, url: string, groupId: string | null = null) {
-  return reduce(
-    store,
+const addGroup = (s: MockStore, ctx: ReduceContext, name: string, projectId: string | null = null) =>
+  reduce(s, { type: 'CREATE_GROUP', payload: { name, projectId } }, ctx);
+
+const addRule = (
+  s: MockStore,
+  ctx: ReduceContext,
+  name: string,
+  url: string,
+  extra: { groupId?: string | null; projectId?: string | null; hosts?: string[] } = {},
+) =>
+  reduce(
+    s,
     {
       type: 'CREATE_RULE',
       payload: {
         draft: createRuleDraft({
           name,
-          groupId,
-          match: { urlMode: 'contains', url, methods: [], hosts: [] },
+          groupId: extra.groupId ?? null,
+          projectId: extra.projectId ?? null,
+          match: { urlMode: 'contains', url, methods: [], hosts: extra.hosts ?? [] },
         }),
       },
     },
     ctx,
   );
-}
 
-describe('分组基础操作', () => {
-  it('新建分组默认启用且为普通组', () => {
+const req = (url: string, host = 'a.com') =>
+  normalizeRequest(url, 'GET', `https://${host}/`);
+
+// ═══════════════════════════════════════════════════════════
+
+describe('项目', () => {
+  it('新建项目默认不限域名 —— 建项目时不必先想清楚域名', () => {
     const ctx = makeCtx();
-    const { store, result } = addGroup(createDefaultStore(), ctx, '商品模块');
+    const { store, result } = addProject(createDefaultStore(), ctx, '金链平台');
     expect(result.ok).toBe(true);
-    expect(store.groups).toHaveLength(1);
-    expect(store.groups[0]!.enabled).toBe(true);
-    expect(store.groups[0]!.exclusive).toBe(false);
+    expect(store.projects[0]!.hostScope.patterns).toEqual([]);
+    // 新建后自动切过去
+    expect(store.activeProjectId).toBe(store.projects[0]!.id);
   });
 
-  it('分组名为空时拒绝创建', () => {
+  it('项目名为空时拒绝创建', () => {
     const ctx = makeCtx();
-    const { store, result } = addGroup(createDefaultStore(), ctx, '   ');
+    const { store, result } = addProject(createDefaultStore(), ctx, '   ');
     expect(result.ok).toBe(false);
-    expect(store.groups).toHaveLength(0);
+    expect(store.projects).toHaveLength(0);
   });
 
-  it('删除分组时组内规则移到未分组，而不是被删掉', () => {
+  it('删除项目时其下分组与规则不删除，降级为全局/未归档', () => {
     const ctx = makeCtx();
-    let s = addGroup(createDefaultStore(), ctx, '商品').store;
+    let s = addProject(createDefaultStore(), ctx, '项目A').store;
+    const pid = s.projects[0]!.id;
+    s = addGroup(s, ctx, '商品', pid).store;
     const gid = s.groups[0]!.id;
-    s = addRule(s, ctx, '列表', '/api/goods', gid).store;
-    s = addRule(s, ctx, '详情', '/api/goods/detail', gid).store;
+    s = addRule(s, ctx, '列表', '/api/goods', { groupId: gid, projectId: pid }).store;
 
-    const out = reduce(s, { type: 'DELETE_GROUP', payload: { id: gid } }, ctx);
-    expect(out.store.groups).toHaveLength(0);
-    // 规则还在，只是没了归属
-    expect(out.store.rules).toHaveLength(2);
-    expect(out.store.rules.every((r) => r.groupId === null)).toBe(true);
+    const out = reduce(s, { type: 'DELETE_PROJECT', payload: { id: pid } }, ctx);
+    expect(out.store.projects).toHaveLength(0);
+    // 删项目顺带毁掉几十条规则是很难挽回的操作
+    expect(out.store.rules).toHaveLength(1);
+    expect(out.store.rules[0]!.projectId).toBeNull();
+    expect(out.store.groups[0]!.projectId).toBeNull();
+    expect(out.store.activeProjectId).toBeNull();
   });
 });
 
-describe('互斥组 = 场景切换', () => {
-  /** 建三个互斥组，模拟「正常态 / 全空态 / 全错态」 */
-  function threeScenarios() {
+describe('域名作用域', () => {
+  it('空 patterns = 不限域名', () => {
+    expect(matchHostScope([], { mode: 'include', patterns: [] }, 'anything.com')).toBe(true);
+  });
+
+  it('include 模式只在列出的域名下生效', () => {
+    const scope = { mode: 'include' as const, patterns: ['glink.jd.com'] };
+    expect(matchHostScope([], scope, 'glink.jd.com')).toBe(true);
+    expect(matchHostScope([], scope, 'dev2.glink.jd.com')).toBe(true);
+    expect(matchHostScope([], scope, 'pay.jd.com')).toBe(false);
+  });
+
+  it('exclude 模式反过来', () => {
+    const scope = { mode: 'exclude' as const, patterns: ['prod.jd.com'] };
+    expect(matchHostScope([], scope, 'prod.jd.com')).toBe(false);
+    expect(matchHostScope([], scope, 'dev.jd.com')).toBe(true);
+  });
+
+  it('支持 *.example.com 通配', () => {
+    const scope = { mode: 'include' as const, patterns: ['*.jd.com'] };
+    expect(matchHostScope([], scope, 'a.jd.com')).toBe(true);
+    expect(matchHostScope([], scope, 'jd.com')).toBe(true);
+    expect(matchHostScope([], scope, 'jd.com.evil.net')).toBe(false);
+  });
+
+  it('规则自己的 hosts 非空时覆盖项目设置 —— 允许个别规则开例外', () => {
+    const scope = { mode: 'include' as const, patterns: ['glink.jd.com'] };
+    expect(matchHostScope(['other.com'], scope, 'other.com')).toBe(true);
+    expect(matchHostScope(['other.com'], scope, 'glink.jd.com')).toBe(false);
+  });
+
+  it('项目域名参与实际匹配', () => {
     const ctx = makeCtx();
-    let s = createDefaultStore();
-    s = addGroup(s, ctx, '正常态', true).store;
-    s = addGroup(s, ctx, '全空态', true).store;
-    s = addGroup(s, ctx, '全错态', true).store;
-    return { store: s, ctx };
-  }
+    let s = addProject(createDefaultStore(), ctx, '金链').store;
+    const pid = s.projects[0]!.id;
+    s = reduce(
+      s,
+      {
+        type: 'UPDATE_PROJECT',
+        payload: { id: pid, patch: { hostScope: { mode: 'include', patterns: ['glink.jd.com'] } } },
+      },
+      ctx,
+    ).store;
+    s = addRule(s, ctx, '列表', '/api/goods', { projectId: pid }).store;
 
-  it('入口一：新建互斥组时自动关掉其他互斥组', () => {
-    const { store } = threeScenarios();
-    const enabled = store.groups.filter((g) => g.enabled);
-    expect(enabled).toHaveLength(1);
-    // 最后建的那个生效
-    expect(enabled[0]!.name).toBe('全错态');
-  });
-
-  it('入口二：启用某个互斥组，其余自动关闭', () => {
-    const { store, ctx } = threeScenarios();
-    const normal = store.groups.find((g) => g.name === '正常态')!;
-
-    const out = reduce(store, { type: 'TOGGLE_GROUP', payload: { id: normal.id, enabled: true } }, ctx);
-    const enabled = out.store.groups.filter((g) => g.enabled);
-    expect(enabled).toHaveLength(1);
-    expect(enabled[0]!.name).toBe('正常态');
-  });
-
-  it('入口三：普通组改成互斥组时同样遵守互斥', () => {
-    const { store, ctx } = threeScenarios();
-    let s = addGroup(store, ctx, '临时组', false).store;
-    const temp = s.groups.find((g) => g.name === '临时组')!;
-    expect(temp.enabled).toBe(true);
-
-    // 此时有 1 个互斥组 + 1 个启用的普通组
-    s = reduce(s, { type: 'UPDATE_GROUP', payload: { id: temp.id, patch: { exclusive: true } } }, ctx).store;
-
-    const enabledExclusive = s.groups.filter((g) => g.exclusive && g.enabled);
-    expect(enabledExclusive).toHaveLength(1);
-    expect(enabledExclusive[0]!.name).toBe('临时组');
-  });
-
-  it('关闭互斥组不会连带开启别的（允许全部关闭）', () => {
-    const { store, ctx } = threeScenarios();
-    const active = store.groups.find((g) => g.enabled)!;
-    const out = reduce(store, { type: 'TOGGLE_GROUP', payload: { id: active.id, enabled: false } }, ctx);
-    expect(out.store.groups.filter((g) => g.enabled)).toHaveLength(0);
-  });
-
-  it('普通组之间互不影响，可同时启用', () => {
-    const ctx = makeCtx();
-    let s = createDefaultStore();
-    s = addGroup(s, ctx, '商品模块').store;
-    s = addGroup(s, ctx, '订单模块').store;
-    s = addGroup(s, ctx, '用户模块').store;
-    expect(s.groups.filter((g) => g.enabled)).toHaveLength(3);
-  });
-
-  it('普通组不受互斥组切换影响', () => {
-    const ctx = makeCtx();
-    let s = createDefaultStore();
-    s = addGroup(s, ctx, '商品模块', false).store;
-    s = addGroup(s, ctx, '正常态', true).store;
-    s = addGroup(s, ctx, '全空态', true).store;
-
-    const goods = s.groups.find((g) => g.name === '商品模块')!;
-    expect(goods.enabled).toBe(true); // 没被互斥逻辑误伤
+    expect(findMatchingRule(s, req('/api/goods/list', 'glink.jd.com'))).not.toBeNull();
+    expect(findMatchingRule(s, req('/api/goods/list', 'pay.jd.com'))).toBeNull();
   });
 });
 
-describe('分组开关对匹配的影响', () => {
+describe('分组', () => {
   it('组关闭时组内规则不参与匹配', () => {
     const ctx = makeCtx();
     let s = addGroup(createDefaultStore(), ctx, '商品').store;
     const gid = s.groups[0]!.id;
-    s = addRule(s, ctx, '列表', '/api/goods', gid).store;
+    s = addRule(s, ctx, '列表', '/api/goods', { groupId: gid }).store;
 
-    const req = normalizeRequest('/api/goods/list', 'GET', 'https://a.com/');
-    expect(findMatchingRule(s, req)).not.toBeNull();
-
+    expect(findMatchingRule(s, req('/api/goods/list'))).not.toBeNull();
     s = reduce(s, { type: 'TOGGLE_GROUP', payload: { id: gid, enabled: false } }, ctx).store;
-    expect(findMatchingRule(s, req)).toBeNull();
+    expect(findMatchingRule(s, req('/api/goods/list'))).toBeNull();
   });
 
-  it('切换场景后命中的是新场景里的规则', () => {
-    const ctx = makeCtx();
-    let s = createDefaultStore();
-    s = addGroup(s, ctx, '正常态', true).store;
-    const normalId = s.groups[0]!.id;
-    s = addGroup(s, ctx, '全空态', true).store;
-    const emptyId = s.groups[1]!.id;
-
-    // 两个场景各有一条针对同一接口的规则
-    s = addRule(s, ctx, '正常-列表', '/api/goods', normalId).store;
-    s = addRule(s, ctx, '空-列表', '/api/goods', emptyId).store;
-
-    const req = normalizeRequest('/api/goods/list', 'GET', 'https://a.com/');
-
-    // 建「全空态」时它成了唯一启用的互斥组
-    expect(findMatchingRule(s, req)?.rule.name).toBe('空-列表');
-
-    s = reduce(s, { type: 'TOGGLE_GROUP', payload: { id: normalId, enabled: true } }, ctx).store;
-    expect(findMatchingRule(s, req)?.rule.name).toBe('正常-列表');
-  });
-});
-
-describe('MOVE_RULE_TO_GROUP', () => {
-  it('把规则移入分组', () => {
+  it('删除分组时组内规则移到未分组', () => {
     const ctx = makeCtx();
     let s = addGroup(createDefaultStore(), ctx, '商品').store;
     const gid = s.groups[0]!.id;
-    s = addRule(s, ctx, '列表', '/api/goods').store;
-    const rid = s.rules[0]!.id;
+    s = addRule(s, ctx, '列表', '/api/goods', { groupId: gid }).store;
 
-    const out = reduce(s, { type: 'MOVE_RULE_TO_GROUP', payload: { id: rid, groupId: gid } }, ctx);
-    expect(out.result.ok).toBe(true);
-    expect(out.store.rules[0]!.groupId).toBe(gid);
+    const out = reduce(s, { type: 'DELETE_GROUP', payload: { id: gid } }, ctx);
+    expect(out.store.rules).toHaveLength(1);
+    expect(out.store.rules[0]!.groupId).toBeNull();
+  });
+
+  it('折叠状态存进数据，刷新后保持', () => {
+    const ctx = makeCtx();
+    let s = addGroup(createDefaultStore(), ctx, '商品').store;
+    expect(s.groups[0]!.collapsed).toBe(false);
+    s = reduce(
+      s,
+      { type: 'UPDATE_GROUP', payload: { id: s.groups[0]!.id, patch: { collapsed: true } } },
+      ctx,
+    ).store;
+    expect(s.groups[0]!.collapsed).toBe(true);
+  });
+
+  it('分组换项目时，组内规则的项目归属跟着走', () => {
+    const ctx = makeCtx();
+    let s = addProject(createDefaultStore(), ctx, 'A').store;
+    const pa = s.projects[0]!.id;
+    s = addProject(s, ctx, 'B').store;
+    const pb = s.projects[1]!.id;
+    s = addGroup(s, ctx, '商品', pa).store;
+    const gid = s.groups[0]!.id;
+    s = addRule(s, ctx, '列表', '/api/goods', { groupId: gid, projectId: pa }).store;
+
+    s = reduce(s, { type: 'UPDATE_GROUP', payload: { id: gid, patch: { projectId: pb } } }, ctx).store;
+
+    // 否则会出现「规则在 B 项目的分组里却标着属于 A 项目」这种自相矛盾的状态
+    expect(s.rules[0]!.projectId).toBe(pb);
+  });
+});
+
+describe('MOVE_RULE', () => {
+  it('移进分组时项目自动跟随该分组', () => {
+    const ctx = makeCtx();
+    let s = addProject(createDefaultStore(), ctx, '项目A').store;
+    const pid = s.projects[0]!.id;
+    s = addGroup(s, ctx, '商品', pid).store;
+    const gid = s.groups[0]!.id;
+    s = addRule(s, ctx, '列表', '/api/goods').store; // 未归档
+
+    s = reduce(s, { type: 'MOVE_RULE', payload: { id: s.rules[0]!.id, groupId: gid } }, ctx).store;
+
+    expect(s.rules[0]!.groupId).toBe(gid);
+    expect(s.rules[0]!.projectId).toBe(pid);
   });
 
   it('移出分组（groupId 传 null）', () => {
     const ctx = makeCtx();
     let s = addGroup(createDefaultStore(), ctx, '商品').store;
     const gid = s.groups[0]!.id;
-    s = addRule(s, ctx, '列表', '/api/goods', gid).store;
-    const rid = s.rules[0]!.id;
+    s = addRule(s, ctx, '列表', '/api/goods', { groupId: gid }).store;
 
-    const out = reduce(s, { type: 'MOVE_RULE_TO_GROUP', payload: { id: rid, groupId: null } }, ctx);
-    expect(out.store.rules[0]!.groupId).toBeNull();
+    s = reduce(s, { type: 'MOVE_RULE', payload: { id: s.rules[0]!.id, groupId: null } }, ctx).store;
+    expect(s.rules[0]!.groupId).toBeNull();
   });
 
   it('同时调整顺序 —— 顺序即优先级，归组不能把优先级搞乱', () => {
     const ctx = makeCtx();
-    let s = createDefaultStore();
-    s = addRule(s, ctx, 'A', '/a').store;
+    let s = addRule(createDefaultStore(), ctx, 'A', '/a').store;
     s = addRule(s, ctx, 'B', '/b').store;
     s = addRule(s, ctx, 'C', '/c').store;
-    const cId = s.rules[2]!.id;
 
-    const out = reduce(
+    s = reduce(
       s,
-      { type: 'MOVE_RULE_TO_GROUP', payload: { id: cId, groupId: null, toIndex: 0 } },
+      { type: 'MOVE_RULE', payload: { id: s.rules[2]!.id, groupId: null, toIndex: 0 } },
       ctx,
-    );
-    expect(out.store.rules.map((r) => r.name)).toEqual(['C', 'A', 'B']);
+    ).store;
+    expect(s.rules.map((r) => r.name)).toEqual(['C', 'A', 'B']);
   });
 
-  it('目标分组不存在时拒绝，且不改动 store', () => {
+  it('目标分组不存在时拒绝', () => {
     const ctx = makeCtx();
     const s = addRule(createDefaultStore(), ctx, 'A', '/a').store;
-    const out = reduce(
-      s,
-      { type: 'MOVE_RULE_TO_GROUP', payload: { id: s.rules[0]!.id, groupId: 'nope' } },
-      ctx,
-    );
+    const out = reduce(s, { type: 'MOVE_RULE', payload: { id: s.rules[0]!.id, groupId: 'nope' } }, ctx);
     expect(out.result.ok).toBe(false);
     expect(out.store).toBe(s);
   });
+});
 
-  it('越界 toIndex 被夹取', () => {
+describe('响应外壳继承链', () => {
+  it('规则未指定时继承分组默认值', () => {
     const ctx = makeCtx();
-    let s = addRule(createDefaultStore(), ctx, 'A', '/a').store;
-    s = addRule(s, ctx, 'B', '/b').store;
-    const out = reduce(
+    let s = addGroup(createDefaultStore(), ctx, '商品').store;
+    const gid = s.groups[0]!.id;
+    s = reduce(
       s,
-      { type: 'MOVE_RULE_TO_GROUP', payload: { id: s.rules[0]!.id, groupId: null, toIndex: 99 } },
+      {
+        type: 'UPDATE_GROUP',
+        payload: { id: gid, patch: { defaultShellTemplateId: 'shell-status-message-data' } },
+      },
       ctx,
-    );
-    expect(out.result.ok).toBe(true);
-    expect(out.store.rules.map((r) => r.name)).toEqual(['B', 'A']);
-  });
-});
+    ).store;
+    s = addRule(s, ctx, '列表', '/api/goods', { groupId: gid }).store;
 
-describe('REORDER_GROUP', () => {
-  it('调整分组顺序', () => {
+    const res = buildResponse(s, s.rules[0]!, req('/api/goods'));
+    expect(JSON.parse(res.body)).toEqual({ status: 0, message: 'ok', data: {} });
+  });
+
+  it('分组没配时继承项目默认值', () => {
     const ctx = makeCtx();
-    let s = createDefaultStore();
-    s = addGroup(s, ctx, 'A').store;
-    s = addGroup(s, ctx, 'B').store;
-    s = addGroup(s, ctx, 'C').store;
+    let s = addProject(createDefaultStore(), ctx, '金链').store;
+    const pid = s.projects[0]!.id;
+    s = reduce(
+      s,
+      {
+        type: 'UPDATE_PROJECT',
+        payload: { id: pid, patch: { defaultShellTemplateId: 'shell-success-result' } },
+      },
+      ctx,
+    ).store;
+    s = addRule(s, ctx, '列表', '/api/goods', { projectId: pid }).store;
 
-    const out = reduce(s, { type: 'REORDER_GROUP', payload: { id: s.groups[2]!.id, toIndex: 0 } }, ctx);
-    expect(out.store.groups.map((g) => g.name)).toEqual(['C', 'A', 'B']);
-  });
-});
-
-describe('旧数据兼容', () => {
-  it('缺 exclusive 字段的分组按普通组处理', () => {
-    // 误判成互斥组会让用户的组莫名互相关闭，所以默认值必须是 false
-    const { store } = migrate({
-      schemaVersion: 1,
-      rules: [],
-      groups: [
-        { id: 'g1', name: '老分组A', enabled: true, defaultShellTemplateId: null },
-        { id: 'g2', name: '老分组B', enabled: true, defaultShellTemplateId: null },
-      ],
-    });
-    expect(store.groups.every((g) => g.exclusive === false)).toBe(true);
-    expect(store.groups.filter((g) => g.enabled)).toHaveLength(2);
+    const res = buildResponse(s, s.rules[0]!, req('/api/goods'));
+    expect(JSON.parse(res.body)).toEqual({ success: true, result: {} });
   });
 
-  it('丢弃没有 id 的脏数据', () => {
-    const { store } = migrate({
-      schemaVersion: 1,
-      rules: [],
-      groups: [{ name: '没有id' }, { id: 'g1', name: '正常' }],
-    });
-    expect(store.groups).toHaveLength(1);
-    expect(store.groups[0]!.id).toBe('g1');
+  it('规则自己指定时优先级最高', () => {
+    const ctx = makeCtx();
+    let s = addProject(createDefaultStore(), ctx, '金链').store;
+    const pid = s.projects[0]!.id;
+    s = reduce(
+      s,
+      {
+        type: 'UPDATE_PROJECT',
+        payload: { id: pid, patch: { defaultShellTemplateId: 'shell-success-result' } },
+      },
+      ctx,
+    ).store;
+    s = reduce(
+      s,
+      {
+        type: 'CREATE_RULE',
+        payload: {
+          draft: createRuleDraft({
+            name: '列表',
+            projectId: pid,
+            match: { urlMode: 'contains', url: '/api/goods', methods: [], hosts: [] },
+            variants: [
+              {
+                name: '默认',
+                response: {
+                  status: 200,
+                  headers: {},
+                  bodyType: 'static',
+                  body: '{}',
+                  shellTemplateId: 'shell-raw',
+                  delayMs: 0,
+                },
+              },
+            ],
+          }),
+        },
+      },
+      ctx,
+    ).store;
+
+    const res = buildResponse(s, s.rules[0]!, req('/api/goods'));
+    expect(res.body).toBe('{}');
   });
 });

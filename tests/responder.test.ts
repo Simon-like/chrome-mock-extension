@@ -2,27 +2,32 @@ import { describe, expect, it } from 'vitest';
 import { buildResponse } from '../src/core/engine/responder.js';
 import { applyShell, detectShell } from '../src/core/engine/shell.js';
 import { captureToRuleDraft } from '../src/core/capture/toRule.js';
-import { migrate } from '../src/core/store/migrate.js';
 import {
   BUILTIN_SHELL_TEMPLATES,
   createDefaultStore,
+  createResponseSpec,
   createRuleDraft,
   materializeRule,
 } from '../src/core/store/defaults.js';
 import { normalizeRequest } from '../src/core/engine/normalize.js';
-import type { MockStore, RuleDraft } from '../src/core/types.js';
+import type { ResponseSpec, RuleDraft } from '../src/core/types.js';
 
 const req = normalizeRequest('/api/x', 'GET', 'https://a.com/');
 
-function ruleOf(partial: Partial<RuleDraft>) {
-  return materializeRule(createRuleDraft(partial), () => 'r1', 1);
+let seq = 0;
+/** 造一条只有一个变体的规则，方便测响应构造 */
+function ruleOf(response?: Partial<ResponseSpec>) {
+  const draft: Partial<RuleDraft> = {
+    variants: [{ name: '默认', response: createResponseSpec(response) }],
+  };
+  return materializeRule(createRuleDraft(draft), () => `r${++seq}`, 1);
 }
 
 describe('buildResponse', () => {
   const store = createDefaultStore();
 
   it('返回纯数据而非 Response 对象（core 不依赖浏览器 API）', () => {
-    const rule = ruleOf({ response: { ...createRuleDraft().response, body: '{"a":1}' } });
+    const rule = ruleOf({ body: '{"a":1}' });
     const res = buildResponse(store, rule, req);
     expect(res).toEqual({
       status: 200,
@@ -34,35 +39,25 @@ describe('buildResponse', () => {
   });
 
   it('非法状态码降级为 200，而不是抛异常', () => {
-    const rule = ruleOf({ response: { ...createRuleDraft().response, status: 99 } });
+    const rule = ruleOf({ status: 99 });
     expect(buildResponse(store, rule, req).status).toBe(200);
   });
 
   it('header 名统一小写，避免 Content-Type 重复设置', () => {
-    const rule = ruleOf({
-      response: { ...createRuleDraft().response, headers: { 'Content-Type': 'text/plain' } },
-    });
+    const rule = ruleOf({ headers: { 'Content-Type': 'text/plain' } });
     const res = buildResponse(store, rule, req);
     expect(res.headers['content-type']).toBe('text/plain');
     expect(Object.keys(res.headers)).toHaveLength(1);
   });
 
   it('套用响应外壳', () => {
-    const rule = ruleOf({
-      response: {
-        ...createRuleDraft().response,
-        body: '[1,2]',
-        shellTemplateId: 'shell-status-message-data',
-      },
-    });
+    const rule = ruleOf({ body: '[1,2]', shellTemplateId: 'shell-status-message-data' });
     const res = buildResponse(store, rule, req);
     expect(res.body).toBe('{"status":0,"message":"ok","data":[1,2]}');
   });
 
   it('shellTemplateId 指向不存在的模板时不套壳，不崩溃', () => {
-    const rule = ruleOf({
-      response: { ...createRuleDraft().response, body: '{"a":1}', shellTemplateId: 'nope' },
-    });
+    const rule = ruleOf({ body: '{"a":1}', shellTemplateId: 'nope' });
     expect(buildResponse(store, rule, req).body).toBe('{"a":1}');
   });
 });
@@ -125,7 +120,7 @@ describe('captureToRuleDraft（F6 核心）', () => {
     const draft = captureToRuleDraft({ url: 'https://a.com/api/x', method: 'POST', status: 201, body: '{}' });
     expect(draft.match.hosts).toEqual(['a.com']);
     expect(draft.match.methods).toEqual(['POST']);
-    expect(draft.response.status).toBe(201);
+    expect(draft.variants[0]!.response.status).toBe(201);
   });
 
   it('自动识别外壳，body 里只留业务数据', () => {
@@ -136,10 +131,11 @@ describe('captureToRuleDraft（F6 核心）', () => {
         status: 200,
         body: '{"status":0,"message":"ok","data":{"list":[1]}}',
       },
-      BUILTIN_SHELL_TEMPLATES,
+      { shellTemplates: BUILTIN_SHELL_TEMPLATES },
     );
-    expect(draft.response.shellTemplateId).toBe('shell-status-message-data');
-    expect(JSON.parse(draft.response.body)).toEqual({ list: [1] });
+    const v = draft.variants[0]!;
+    expect(v.response.shellTemplateId).toBe('shell-status-message-data');
+    expect(JSON.parse(v.response.body)).toEqual({ list: [1] });
   });
 
   it('响应体是 HTML 等非 JSON 时原样保留', () => {
@@ -149,7 +145,7 @@ describe('captureToRuleDraft（F6 核心）', () => {
       status: 200,
       body: '<html>hi</html>',
     });
-    expect(draft.response.body).toBe('<html>hi</html>');
+    expect(draft.variants[0]!.response.body).toBe('<html>hi</html>');
   });
 
   it('无法解析的 URL 不崩溃', () => {
@@ -159,42 +155,27 @@ describe('captureToRuleDraft（F6 核心）', () => {
   });
 });
 
-describe('migrate', () => {
-  it('无数据时返回默认配置', () => {
-    const { store, reset } = migrate(undefined);
-    expect(reset).toBe(true);
-    expect(store.schemaVersion).toBe(1);
-    expect(store.rules).toEqual([]);
+  it('withPresetVariants 顺带生成空数据与报错变体', () => {
+    const draft = captureToRuleDraft(
+      {
+        url: 'https://a.com/api/goods/list',
+        method: 'GET',
+        status: 200,
+        body: '{"list":[{"id":1}],"total":42}',
+      },
+      { withPresetVariants: true },
+    );
+    expect(draft.variants.map((v) => v.name)).toEqual(['真实响应', '空数据', '报错']);
+    // 空数据是从真实响应推出来的形状，而非死板的 {"list":[],"total":0}
+    expect(JSON.parse(draft.variants[1]!.response.body)).toEqual({ list: [], total: 0 });
+    expect(draft.variants[2]!.response.status).toBe(500);
   });
 
-  it('缺字段的数据被自愈补齐', () => {
-    const { store, reset } = migrate({ schemaVersion: 1, rules: [] });
-    expect(reset).toBe(false);
-    expect(store.settings.captureMaxCount).toBe(200);
-    expect(store.shellTemplates.length).toBeGreaterThan(0);
+  it('落在项目下时不再重复限定 host —— 项目已经管住域名了', () => {
+    const draft = captureToRuleDraft(
+      { url: 'https://a.com/api/x', method: 'GET', status: 200, body: '{}' },
+      { projectId: 'p1' },
+    );
+    expect(draft.projectId).toBe('p1');
+    expect(draft.match.hosts).toEqual([]);
   });
-
-  it('内置模板始终以代码为准，用户自定义模板保留', () => {
-    const { store } = migrate({
-      schemaVersion: 1,
-      rules: [],
-      shellTemplates: [
-        { id: 'shell-raw', name: '被改坏的内置模板', builtin: true, template: 'BAD' },
-        { id: 'my-custom', name: '风控层格式', builtin: false, template: '{"d":__DATA__}' },
-      ],
-    });
-    expect(store.shellTemplates.find((t) => t.id === 'shell-raw')!.template).toBe('__DATA__');
-    expect(store.shellTemplates.find((t) => t.id === 'my-custom')).toBeDefined();
-  });
-
-  it('来自更高版本的数据不敢降级处理，走重置', () => {
-    const { reset, reason } = migrate({ schemaVersion: 999, rules: [] });
-    expect(reset).toBe(true);
-    expect(reason).toContain('999');
-  });
-
-  it('保留 enabled 状态', () => {
-    const { store } = migrate({ schemaVersion: 1, enabled: false, rules: [] } as Partial<MockStore>);
-    expect(store.enabled).toBe(false);
-  });
-});

@@ -65,6 +65,8 @@ export interface EngineSnapshot {
   enabled: boolean;
   rules: Rule[];
   groups: MockStore['groups'];
+  /** 项目的域名作用域参与匹配，所以引擎也需要 */
+  projects: MockStore['projects'];
   shellTemplates: MockStore['shellTemplates'];
   captureEnabled: boolean;
   /** 版本号，用于判断快照是否需要更新 */

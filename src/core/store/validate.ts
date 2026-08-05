@@ -10,7 +10,7 @@
  * 阻止保存太粗暴，提示 + 运行时耗时预算（matcher.ts）是更稳的组合。
  */
 
-import type { MatchCondition, Rule, RuleDraft } from '../types.js';
+import type { MatchCondition, ResponseSpec, Rule, RuleDraft } from '../types.js';
 
 export interface ValidationIssue {
   level: 'error' | 'warning';
@@ -26,7 +26,23 @@ export function validateRule(rule: Rule | RuleDraft): ValidationIssue[] {
   }
 
   issues.push(...validateMatch(rule.match));
-  issues.push(...validateResponse(rule));
+
+  // 变体不能为空 —— 没有变体的规则没有任何响应可返回
+  if (!rule.variants || rule.variants.length === 0) {
+    issues.push({ level: 'error', field: 'variants', message: '至少需要一个变体' });
+  } else {
+    rule.variants.forEach((v, i) => {
+      const prefix = rule.variants.length > 1 ? `变体「${v.name}」：` : '';
+      for (const issue of validateResponse(v.response)) {
+        issues.push({ ...issue, field: `variants[${i}].${issue.field}`, message: prefix + issue.message });
+      }
+    });
+
+    const names = rule.variants.map((v) => v.name.trim());
+    if (new Set(names).size !== names.length) {
+      issues.push({ level: 'warning', field: 'variants', message: '存在同名变体，切换时不易分辨' });
+    }
+  }
 
   return issues;
 }
@@ -82,14 +98,13 @@ function validateMatch(m: MatchCondition): ValidationIssue[] {
   return issues;
 }
 
-function validateResponse(rule: Rule | RuleDraft): ValidationIssue[] {
+function validateResponse(r: ResponseSpec): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
-  const r = rule.response;
 
   if (!Number.isFinite(r.status) || r.status < 100 || r.status > 599) {
     issues.push({
       level: 'error',
-      field: 'response.status',
+      field: 'status',
       message: 'HTTP 状态码需在 100–599 之间',
     });
   }
@@ -103,7 +118,7 @@ function validateResponse(rule: Rule | RuleDraft): ValidationIssue[] {
       } catch (e) {
         issues.push({
           level: 'error',
-          field: 'response.body',
+          field: 'body',
           message: `JSON 格式错误：${(e as Error).message}`,
         });
       }
@@ -111,12 +126,12 @@ function validateResponse(rule: Rule | RuleDraft): ValidationIssue[] {
   }
 
   if (r.delayMs < 0) {
-    issues.push({ level: 'error', field: 'response.delayMs', message: '延迟不能为负' });
+    issues.push({ level: 'error', field: 'delayMs', message: '延迟不能为负' });
   }
   if (r.delayMs > 60_000) {
     issues.push({
       level: 'warning',
-      field: 'response.delayMs',
+      field: 'delayMs',
       message: '延迟超过 60 秒，确认不是误填？',
     });
   }

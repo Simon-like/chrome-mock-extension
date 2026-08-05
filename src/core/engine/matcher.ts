@@ -12,8 +12,10 @@
  */
 
 import type {
+  HostScope,
   MatchCondition,
   MockStore,
+  Project,
   RequestInfo,
   Rule,
 } from '../types.js';
@@ -64,35 +66,83 @@ export function findMatchingRule(
 ): MatchResult | null {
   if (!store.enabled) return null;
 
+  if (!Array.isArray(store.rules)) return null;
+
   const groupEnabled = buildGroupEnabledMap(store);
+  const projects = buildProjectMap(store);
 
   for (let i = 0; i < store.rules.length; i++) {
     const rule = store.rules[i];
     if (!rule) continue;
     if (!rule.enabled) continue;
     if (rule.groupId && groupEnabled.get(rule.groupId) === false) continue;
-    if (!matchRule(rule, req)) continue;
+    if (!matchRule(rule, req, projects.get(rule.projectId ?? ''))) continue;
     return { rule, index: i };
   }
   return null;
 }
 
-/** 单条规则是否匹配 —— 导出供 UI 做「这条规则会命中哪些历史请求」的预览 */
-export function matchRule(rule: Rule, req: RequestInfo): boolean {
+/**
+ * 单条规则是否匹配 —— 导出供 UI 做「这条规则会命中哪些历史请求」的预览。
+ *
+ * project 可选：传了就参与域名作用域判断。
+ */
+export function matchRule(rule: Rule, req: RequestInfo, project?: Project): boolean {
   const m = rule.match;
-  return matchHost(m.hosts, req.host) && matchMethod(m, req) && matchUrl(m, req.url);
+  return (
+    matchHostScope(m.hosts, project?.hostScope, req.host) &&
+    matchMethod(m, req) &&
+    matchUrl(m, req.url)
+  );
 }
 
 function buildGroupEnabledMap(store: MockStore): Map<string, boolean> {
   const map = new Map<string, boolean>();
+  if (!Array.isArray(store.groups)) return map;
   for (const g of store.groups) map.set(g.id, g.enabled);
   return map;
+}
+
+function buildProjectMap(store: MockStore): Map<string, Project> {
+  const map = new Map<string, Project>();
+  // 快照可能来自旧版本或构造不全，缺字段时按「没有项目」处理而不是抛异常 ——
+  // 引擎跑在用户每个请求上，任何异常都会毁掉整个页面
+  if (!Array.isArray(store.projects)) return map;
+  for (const p of store.projects) map.set(p.id, p);
+  return map;
+}
+
+/**
+ * 域名作用域判断。
+ *
+ * 优先级：规则自己的 hosts 非空时【覆盖】项目设置。
+ * 这样项目管住大多数情况，个别规则仍可开例外。
+ */
+export function matchHostScope(
+  ruleHosts: string[],
+  projectScope: HostScope | undefined,
+  host: string,
+): boolean {
+  if (ruleHosts.length > 0) return matchHost(ruleHosts, host);
+  if (!projectScope || projectScope.patterns.length === 0) return true; // 不限域名
+  const hit = projectScope.patterns.some((p) => matchHostPattern(p, host));
+  return projectScope.mode === 'exclude' ? !hit : hit;
 }
 
 /** 空数组 = 不限制 */
 export function matchHost(hosts: string[], host: string): boolean {
   if (hosts.length === 0) return true;
-  return hosts.some((h) => h === host || host.endsWith('.' + h));
+  return hosts.some((h) => matchHostPattern(h, host));
+}
+
+/** 支持 *.example.com 形式的通配 */
+function matchHostPattern(pattern: string, host: string): boolean {
+  if (!pattern) return false;
+  if (pattern.startsWith('*.')) {
+    const base = pattern.slice(2);
+    return host === base || host.endsWith('.' + base);
+  }
+  return host === pattern || host.endsWith('.' + pattern);
 }
 
 function matchMethod(m: MatchCondition, req: RequestInfo): boolean {

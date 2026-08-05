@@ -111,6 +111,7 @@ function lookupRule(req: RequestInfo): Rule | null {
     enabled: snapshot.enabled,
     rules: snapshot.rules,
     groups: snapshot.groups,
+    projects: snapshot.projects ?? [],
     shellTemplates: snapshot.shellTemplates,
   } as MockStore;
 
@@ -119,7 +120,12 @@ function lookupRule(req: RequestInfo): Rule | null {
 }
 
 function makeMockResponse(rule: Rule, req: RequestInfo): MockResponse {
-  const pseudoStore = { shellTemplates: snapshot?.shellTemplates ?? [] } as MockStore;
+  // 外壳继承链要读 groups / projects，都得带上
+  const pseudoStore = {
+    shellTemplates: snapshot?.shellTemplates ?? [],
+    groups: snapshot?.groups ?? [],
+    projects: snapshot?.projects ?? [],
+  } as MockStore;
   return buildResponse(pseudoStore, rule, req);
 }
 

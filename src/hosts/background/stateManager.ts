@@ -87,6 +87,7 @@ export async function buildSnapshot(): Promise<EngineSnapshot> {
     enabled: store.enabled,
     rules: store.rules,
     groups: store.groups,
+    projects: store.projects,
     shellTemplates: store.shellTemplates,
     captureEnabled: store.settings.captureEnabled,
     revision,

@@ -36,7 +36,8 @@ describe('CREATE_RULE', () => {
     const ctx = makeCtx();
     const { store, result } = withRule(createDefaultStore(), ctx, 'A', '/api/a');
     expect(result.ok).toBe(true);
-    expect(result.createdId).toBe('id-1');
+    // 不断言具体 id 值 —— 变体也会消耗 id，分配顺序是实现细节
+    expect(result.createdId).toBe(store.rules[0]!.id);
     expect(store.rules).toHaveLength(1);
     expect(store.rules[0]!.name).toBe('A');
   });
@@ -49,6 +50,14 @@ describe('CREATE_RULE', () => {
     expect(meta.lastHitAt).toBeNull();
     expect(meta.createdAt).toBe(1_700_000_000_000);
     expect(meta.source).toBe('manual');
+  });
+
+  it('自动带一个变体，activeVariantId 指向它', () => {
+    const ctx = makeCtx();
+    const { store } = withRule(createDefaultStore(), ctx, 'A', '/api/a');
+    const rule = store.rules[0]!;
+    expect(rule.variants).toHaveLength(1);
+    expect(rule.activeVariantId).toBe(rule.variants[0]!.id);
   });
 
   it('不修改原 store（纯函数）', () => {
@@ -64,10 +73,11 @@ describe('UPDATE_RULE', () => {
     const ctx = makeCtx();
     let s = withRule(createDefaultStore(), ctx, 'A', '/api/a').store;
 
+    const rid = s.rules[0]!.id;
     const later: ReduceContext = { ...ctx, now: () => 1_700_000_999_999 };
     const out = reduce(
       s,
-      { type: 'UPDATE_RULE', payload: { id: 'id-1', patch: { name: 'A改' } } },
+      { type: 'UPDATE_RULE', payload: { id: rid, patch: { name: 'A改' } } },
       later,
     );
 
@@ -89,12 +99,13 @@ describe('UPDATE_RULE', () => {
   it('patch 无法篡改 id', () => {
     const ctx = makeCtx();
     const s = withRule(createDefaultStore(), ctx, 'A', '/api/a').store;
+    const rid = s.rules[0]!.id;
     const out = reduce(
       s,
-      { type: 'UPDATE_RULE', payload: { id: 'id-1', patch: { name: 'x' } } },
+      { type: 'UPDATE_RULE', payload: { id: rid, patch: { name: 'x' } } },
       ctx,
     );
-    expect(out.store.rules[0]!.id).toBe('id-1');
+    expect(out.store.rules[0]!.id).toBe(rid);
   });
 });
 
@@ -105,7 +116,7 @@ describe('REORDER_RULE', () => {
     s = withRule(s, ctx, 'B', '/b').store;
     s = withRule(s, ctx, 'C', '/c').store;
 
-    const out = reduce(s, { type: 'REORDER_RULE', payload: { id: 'id-3', toIndex: 0 } }, ctx);
+    const out = reduce(s, { type: 'REORDER_RULE', payload: { id: s.rules[2]!.id, toIndex: 0 } }, ctx);
     expect(out.store.rules.map((r) => r.name)).toEqual(['C', 'A', 'B']);
   });
 
@@ -114,7 +125,7 @@ describe('REORDER_RULE', () => {
     let s = withRule(createDefaultStore(), ctx, 'A', '/a').store;
     s = withRule(s, ctx, 'B', '/b').store;
 
-    const out = reduce(s, { type: 'REORDER_RULE', payload: { id: 'id-1', toIndex: 99 } }, ctx);
+    const out = reduce(s, { type: 'REORDER_RULE', payload: { id: s.rules[0]!.id, toIndex: 99 } }, ctx);
     expect(out.result.ok).toBe(true);
     expect(out.store.rules.map((r) => r.name)).toEqual(['B', 'A']);
   });
@@ -124,18 +135,19 @@ describe('DUPLICATE_RULE', () => {
   it('副本紧跟原规则，且统计归零', () => {
     const ctx = makeCtx();
     let s = withRule(createDefaultStore(), ctx, 'A', '/a').store;
-    s = reduce(s, { type: 'RECORD_HIT', payload: { ruleId: 'id-1', at: 123 } }, ctx).store;
+    const rid = s.rules[0]!.id;
+    s = reduce(s, { type: 'RECORD_HIT', payload: { ruleId: rid, at: 123 } }, ctx).store;
 
-    const out = reduce(s, { type: 'DUPLICATE_RULE', payload: { id: 'id-1' } }, ctx);
+    const out = reduce(s, { type: 'DUPLICATE_RULE', payload: { id: rid } }, ctx);
     expect(out.store.rules.map((r) => r.name)).toEqual(['A', 'A 副本']);
     expect(out.store.rules[1]!.meta.hitCount).toBe(0);
-    expect(out.store.rules[1]!.id).not.toBe('id-1');
+    expect(out.store.rules[1]!.id).not.toBe(rid);
   });
 
   it('副本是深拷贝，改副本不影响原规则', () => {
     const ctx = makeCtx();
     const s = withRule(createDefaultStore(), ctx, 'A', '/a').store;
-    const out = reduce(s, { type: 'DUPLICATE_RULE', payload: { id: 'id-1' } }, ctx);
+    const out = reduce(s, { type: 'DUPLICATE_RULE', payload: { id: s.rules[0]!.id } }, ctx);
 
     out.store.rules[1]!.match.methods.push('POST');
     expect(out.store.rules[0]!.match.methods).toEqual([]);
@@ -146,8 +158,9 @@ describe('RECORD_HIT', () => {
   it('累加命中数（这是诊断功能的数据来源）', () => {
     const ctx = makeCtx();
     let s = withRule(createDefaultStore(), ctx, 'A', '/a').store;
-    s = reduce(s, { type: 'RECORD_HIT', payload: { ruleId: 'id-1', at: 100 } }, ctx).store;
-    s = reduce(s, { type: 'RECORD_HIT', payload: { ruleId: 'id-1', at: 200 } }, ctx).store;
+    const rid = s.rules[0]!.id;
+    s = reduce(s, { type: 'RECORD_HIT', payload: { ruleId: rid, at: 100 } }, ctx).store;
+    s = reduce(s, { type: 'RECORD_HIT', payload: { ruleId: rid, at: 200 } }, ctx).store;
 
     expect(s.rules[0]!.meta.hitCount).toBe(2);
     expect(s.rules[0]!.meta.lastHitAt).toBe(200);
