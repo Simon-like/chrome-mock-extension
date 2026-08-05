@@ -109,6 +109,13 @@ AI 生成 JSON 后，在规则管理页点 **「剪贴板导入」**。
 - 覆盖已有接口 / 新建虚拟接口两种类型
 - 单条开关 + 全局总开关 + `Alt+M` 快捷键
 
+**分组与场景**
+
+- **普通分组**：按业务模块归拢规则，多个组可同时启用，整组一键开关
+- **互斥分组（场景）**：同一时刻只有一个生效 —— 把「正常态 / 全空态 / 全错态」
+  建成三个互斥组，点一下整体切换，当前场景常驻顶栏
+- 归组支持拖拽和下拉两种方式
+
 **响应构造**
 
 - 自定义状态码、响应头、响应体
@@ -124,6 +131,7 @@ AI 生成 JSON 后，在规则管理页点 **「剪贴板导入」**。
 
 **其他**
 
+- 面板宽度可拖拽调整（双击重置，方向键微调）
 - 规则导入 / 导出 JSON，剪贴板导入
 - 全部数据存本地，不联网
 
@@ -147,7 +155,7 @@ AI 生成 JSON 后，在规则管理页点 **「剪贴板导入」**。
 
 ### 尚未实现
 
-动态响应（JS 函数）· Mock.js 假数据生成 · 规则分组与场景切换 · 改请求头/请求体 ·
+动态响应（JS 函数）· Mock.js 假数据生成 · 改请求头/请求体 ·
 录制模式 · HAR 导入 · MCP Server · GraphQL 按 operationName 匹配
 
 ---
@@ -254,7 +262,7 @@ observedCount + mockedCount > 0        // ✅ 正确
 
 ```bash
 npm run build          # 完整构建（类型检查 + 注入脚本 + 主构建）
-npm test               # 89 个单元测试
+npm test               # 108 个单元测试
 npm run typecheck      # 只做类型检查
 npm run build:inject   # 只重建注入脚本
 ```
@@ -268,6 +276,7 @@ npm run build:inject   # 只重建注入脚本
 | `tests/matcher.test.ts` | 31 | 三种匹配模式边界、ReDoS 防护、host / method 过滤 |
 | `tests/responder.test.ts` | 22 | 响应构造、外壳套用与识别、Capture 转换、版本迁移 |
 | `tests/reducer.test.ts` | 16 | 所有 Command 的行为与纯函数性 |
+| `tests/groups.test.ts` | 19 | 分组增删、互斥组三个触发入口、场景切换对匹配的影响 |
 | `tests/inject.test.ts` | 20 | **注入层**：fetch / XHR 拦截、fail-open、延迟、健壮性 |
 
 注入层测试跑在 happy-dom 里真实执行 hook 逻辑 —— 伪造 XHR 响应是全项目最容易写错的地方
