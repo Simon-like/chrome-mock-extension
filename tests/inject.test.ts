@@ -23,7 +23,7 @@ import {
 } from '../src/core/store/defaults.js';
 import { PAGE_CHANNEL } from '../src/shared/messages.js';
 import type { EngineSnapshot } from '../src/shared/messages.js';
-import type { ResponseSpec, Rule, RuleDraft } from '../src/core/types.js';
+import type { Rule, RuleDraft } from '../src/core/types.js';
 
 /** 记录注入层通过 postMessage 上报的事件 */
 const reported: Array<{ type: string; entry?: Record<string, unknown> }> = [];

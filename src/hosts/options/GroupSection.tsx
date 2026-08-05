@@ -1,12 +1,8 @@
 /**
  * 分组区块
  *
- * 两种分组，视觉上必须能一眼分清：
- *   - 普通组：复选框，多个可同时启用，用于按业务模块归拢规则
- *   - 互斥组：单选框 + ⚡ 标记，同一时刻只有一个启用 —— 这就是「场景切换」
- *
- * 之所以不引入独立的 Scenario 概念，是因为「一组规则一起生效、且与其他组互斥」
- * 本质就是分组加一个属性，多一个概念只会增加理解成本。
+ * 分组是纯粹的容器：规则住在里面，一条规则只属于一个分组。
+ * 「同一接口的多份响应」不是分组的事，那是变体（见 VariantSwitcher）。
  */
 
 import { useState } from 'react';
@@ -15,14 +11,11 @@ import type { Group, Rule } from '@core/types.js';
 interface Props {
   group: Group | null; // null 表示「未分组」这个虚拟分区
   rules: Rule[];
-  /** 该组内是否有互斥兄弟组，用于决定渲染单选还是复选 */
-  isExclusive: boolean;
   collapsed: boolean;
   onToggleCollapse: () => void;
   onToggleEnabled: (enabled: boolean) => void;
   onRename: (name: string) => void;
   onDelete: () => void;
-  onSetExclusive: (exclusive: boolean) => void;
   /** 拖拽相关 */
   dropActive: boolean;
   onDragOver: (e: React.DragEvent) => void;
@@ -34,13 +27,11 @@ interface Props {
 export function GroupSection({
   group,
   rules,
-  isExclusive,
   collapsed,
   onToggleCollapse,
   onToggleEnabled,
   onRename,
   onDelete,
-  onSetExclusive,
   dropActive,
   onDragOver,
   onDragLeave,
@@ -79,14 +70,11 @@ export function GroupSection({
         </button>
 
         {group ? (
-          /* 互斥组用单选框：点一下即切换场景，语义上就是「选中这一个」 */
           <input
-            type={isExclusive ? 'radio' : 'checkbox'}
+            type="checkbox"
             checked={enabled}
             onChange={(e) => onToggleEnabled(e.target.checked)}
-            /* radio 需要同名才能表现出单选外观 */
-            name={isExclusive ? 'mockstudio-exclusive-group' : undefined}
-            title={isExclusive ? '切换到这个场景' : '启用 / 停用该分组'}
+            title="启用 / 停用该分组"
           />
         ) : (
           <span style={{ width: 13, flexShrink: 0 }} />
@@ -118,12 +106,6 @@ export function GroupSection({
           </span>
         )}
 
-        {isExclusive && (
-          <span className="tag tag-exclusive" title="同一时刻只有一个互斥组生效">
-            ⚡ 互斥
-          </span>
-        )}
-
         <span className="faint" style={{ fontSize: 10.5, flexShrink: 0 }}>
           {activeCount}/{rules.length}
         </span>
@@ -147,14 +129,6 @@ export function GroupSection({
                     }}
                   >
                     重命名
-                  </button>
-                  <button
-                    onClick={() => {
-                      onSetExclusive(!group.exclusive);
-                      setMenuOpen(false);
-                    }}
-                  >
-                    {group.exclusive ? '改为普通分组' : '改为互斥分组（场景）'}
                   </button>
                   <div className="menu__sep" />
                   <button

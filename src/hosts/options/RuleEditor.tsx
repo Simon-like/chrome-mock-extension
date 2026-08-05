@@ -2,17 +2,21 @@
  * 规则编辑器
  *
  * 这里【没有业务逻辑】—— 校验来自 core/store/validate，保存是 dispatch 一个 Command。
- * UI 只负责收集输入和展示反馈。这正是 A1/A3 分层的目的：
- * V2 的 MCP 走同一套 core，无需重写。
+ * UI 只负责收集输入和展示反馈。这正是分层的目的：MCP 走同一套 core，无需重写。
+ *
+ * 变体是本编辑器的核心结构：上半部分是规则级配置（名称、匹配条件），
+ * 下半部分是变体级配置（状态码、延迟、响应体），中间用标签页切换。
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { validateRule } from '@core/store/validate.js';
-import { createRuleDraft } from '@core/store/defaults.js';
+import { createResponseSpec, createRuleDraft } from '@core/store/defaults.js';
 import {
   HTTP_METHODS,
   type Group,
   type HttpMethod,
+  type Project,
+  type ResponseSpec,
   type Rule,
   type RuleDraft,
   type ShellTemplate,
@@ -22,13 +26,9 @@ import { JsonEditor } from '@ui/JsonEditor.js';
 interface Props {
   /** 编辑现有规则时传入 */
   initial?: Rule;
-  /**
-   * 以一份预填草稿开始（Capture-to-Mock 用这个）。
-   * 与 initial 互斥：initial 是「改一条已存在的规则」，
-   * initialDraft 是「新建一条但字段已经填好了」。
-   */
+  /** 以一份预填草稿开始（Capture-to-Mock 用这个）。与 initial 互斥 */
   initialDraft?: RuleDraft;
-  /** 可选：不传则不显示分组选择（DevTools 面板里用不上） */
+  projects?: Project[];
   groups?: Group[];
   shellTemplates: ShellTemplate[];
   /** 返回是否保存成功 */
@@ -39,6 +39,7 @@ interface Props {
 export function RuleEditor({
   initial,
   initialDraft,
+  projects,
   groups,
   shellTemplates,
   onSave,
@@ -47,7 +48,9 @@ export function RuleEditor({
   const [draft, setDraft] = useState<RuleDraft>(
     () => initialDraft ?? (initial ? toDraft(initial) : createRuleDraft()),
   );
-  /** 保存后用来判断有没有新改动 —— 没改动就不该允许重复保存 */
+  const [activeIdx, setActiveIdx] = useState(() => draft.activeVariantIndex ?? 0);
+  const [renamingVariant, setRenamingVariant] = useState(false);
+
   const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
@@ -55,18 +58,57 @@ export function RuleEditor({
 
   useEffect(() => () => void (flashTimer.current && clearTimeout(flashTimer.current)), []);
 
-  const issues = useMemo(() => validateRule(draft), [draft]);
+  const issues = useMemo(() => validateRule(draft as never), [draft]);
   const errors = issues.filter((i) => i.level === 'error');
   const warnings = issues.filter((i) => i.level === 'warning');
 
-  const serialized = JSON.stringify(draft);
+  const serialized = JSON.stringify({ ...draft, activeVariantIndex: activeIdx });
   const dirty = savedSnapshot === null || savedSnapshot !== serialized;
+
+  const variant = draft.variants[activeIdx] ?? draft.variants[0]!;
 
   const patch = (p: Partial<RuleDraft>) => setDraft((d) => ({ ...d, ...p }));
   const patchMatch = (p: Partial<RuleDraft['match']>) =>
     setDraft((d) => ({ ...d, match: { ...d.match, ...p } }));
-  const patchResponse = (p: Partial<RuleDraft['response']>) =>
-    setDraft((d) => ({ ...d, response: { ...d.response, ...p } }));
+
+  /** 只改当前变体的响应，其他变体不受影响 */
+  const patchResponse = (p: Partial<ResponseSpec>) =>
+    setDraft((d) => ({
+      ...d,
+      variants: d.variants.map((v, i) =>
+        i === activeIdx ? { ...v, response: { ...v.response, ...p } } : v,
+      ),
+    }));
+
+  const renameVariant = (name: string) =>
+    setDraft((d) => ({
+      ...d,
+      variants: d.variants.map((v, i) => (i === activeIdx ? { ...v, name } : v)),
+    }));
+
+  const addVariant = (name: string, response?: Partial<ResponseSpec>) => {
+    setDraft((d) => ({
+      ...d,
+      variants: [
+        ...d.variants,
+        {
+          name,
+          // 缺省复制当前变体 —— 多数时候是想「基于现在这份改一点」
+          response: response
+            ? createResponseSpec({ ...d.variants[activeIdx]?.response, ...response })
+            : createResponseSpec({ ...d.variants[activeIdx]?.response }),
+        },
+      ],
+    }));
+    setActiveIdx(draft.variants.length);
+  };
+
+  const deleteVariant = (idx: number) => {
+    // 至少保留一个 —— 没有变体的规则没有任何响应可返回
+    if (draft.variants.length <= 1) return;
+    setDraft((d) => ({ ...d, variants: d.variants.filter((_, i) => i !== idx) }));
+    setActiveIdx((cur) => (cur >= idx && cur > 0 ? cur - 1 : cur));
+  };
 
   const toggleMethod = (m: HttpMethod) => {
     const cur = draft.match.methods;
@@ -75,15 +117,12 @@ export function RuleEditor({
 
   /**
    * 保存后【不关闭编辑器】。
-   *
-   * 用户反馈：保存即隐藏会让人不确定有没有存上，容易反复点保存。
-   * 现在改成留在原地 + 短暂提示 + 保存按钮进入「已保存」不可点状态，
-   * 直到有新改动才重新可用。
+   * 保存即隐藏会让人不确定有没有存上，容易反复点保存。
    */
   const handleSave = async () => {
     if (errors.length > 0 || saving || !dirty) return;
     setSaving(true);
-    const ok = await onSave(draft);
+    const ok = await onSave({ ...draft, activeVariantIndex: activeIdx });
     setSaving(false);
     if (!ok) return;
 
@@ -93,7 +132,6 @@ export function RuleEditor({
     flashTimer.current = setTimeout(() => setFlash(null), 2000);
   };
 
-  // Cmd/Ctrl + S 保存
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
@@ -106,41 +144,21 @@ export function RuleEditor({
   });
 
   const title = initial ? '编辑规则' : initialDraft ? '从请求创建 Mock' : '新建规则';
+  const groupsOfProject = groups?.filter(
+    (g) => !draft.projectId || g.projectId === draft.projectId || g.projectId === null,
+  );
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        borderLeft: '1px solid var(--border)',
-        background: 'var(--bg)',
-      }}
-    >
+    <div className="editor">
       {/* 头部固定，长表单滚动时保存按钮始终可见 */}
-      <div
-        className="row"
-        style={{
-          justifyContent: 'space-between',
-          padding: '11px 16px',
-          borderBottom: '1px solid var(--border)',
-          flexShrink: 0,
-        }}
-      >
-        <div className="row" style={{ gap: 9 }}>
+      <div className="editor__head">
+        <div className="row" style={{ gap: 9, minWidth: 0 }}>
           <strong style={{ fontSize: 13 }}>{title}</strong>
-          {flash && (
-            <span className="ok" style={{ fontSize: 11 }}>
-              ✓ {flash}
-            </span>
-          )}
+          {flash && <span className="ok" style={{ fontSize: 11 }}>✓ {flash}</span>}
           {!flash && dirty && savedSnapshot !== null && (
-            <span className="faint" style={{ fontSize: 11 }}>
-              有未保存的改动
-            </span>
+            <span className="faint" style={{ fontSize: 11 }}>有未保存的改动</span>
           )}
         </div>
-
         <div className="row" style={{ gap: 7 }}>
           <button onClick={onClose}>关闭</button>
           <button
@@ -154,43 +172,60 @@ export function RuleEditor({
         </div>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: 16, minHeight: 0 }}>
-        <div className="row" style={{ gap: 10, alignItems: 'flex-start', marginBottom: 14 }}>
+      <div className="editor__body">
+        {/* ── 规则级配置 ── */}
+        <div className="row" style={{ gap: 10, alignItems: 'flex-start', marginBottom: 13 }}>
           <div className="grow">
             <label>规则名</label>
             <input value={draft.name} onChange={(e) => patch({ name: e.target.value })} />
           </div>
-          {groups && groups.length > 0 && (
-            <div style={{ width: 150, flexShrink: 0 }}>
-              <label>所属分组</label>
-              <select
-                value={draft.groupId ?? ''}
-                onChange={(e) => patch({ groupId: e.target.value || null })}
-              >
-                <option value="">未分组</option>
-                {groups.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                    {g.exclusive ? ' ⚡' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
         </div>
 
-        {/* 规则挂在已停用的分组下时，会「看起来启用但实际不生效」—— 必须提示 */}
+        {(projects?.length || groups?.length) && (
+          <div className="row" style={{ gap: 10, alignItems: 'flex-start', marginBottom: 13 }}>
+            {projects && projects.length > 0 && (
+              <div className="grow">
+                <label>所属项目</label>
+                <select
+                  value={draft.projectId ?? ''}
+                  onChange={(e) => patch({ projectId: e.target.value || null, groupId: null })}
+                >
+                  <option value="">未归档</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {groupsOfProject && groupsOfProject.length > 0 && (
+              <div className="grow">
+                <label>所属分组</label>
+                <select
+                  value={draft.groupId ?? ''}
+                  onChange={(e) => patch({ groupId: e.target.value || null })}
+                >
+                  <option value="">未分组</option>
+                  {groupsOfProject.map((g) => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 规则挂在已停用分组下时会「看起来启用但不生效」—— 必须提示 */}
         {(() => {
           const g = groups?.find((x) => x.id === draft.groupId);
           if (!g || g.enabled || !draft.enabled) return null;
           return (
-            <div className="banner banner-warn" style={{ marginBottom: 14 }}>
+            <div className="banner banner-warn" style={{ marginBottom: 13 }}>
               所属分组「{g.name}」当前已停用，本规则不会生效
             </div>
           );
         })()}
 
-        <div style={{ marginBottom: 14 }}>
+        <div style={{ marginBottom: 13 }}>
           <label>类型</label>
           <div className="row" style={{ gap: 9, alignItems: 'stretch' }}>
             <KindOption
@@ -208,7 +243,7 @@ export function RuleEditor({
           </div>
         </div>
 
-        <div style={{ marginBottom: 14 }}>
+        <div style={{ marginBottom: 13 }}>
           <label>URL 匹配</label>
           <div className="row" style={{ gap: 7 }}>
             <select
@@ -231,7 +266,7 @@ export function RuleEditor({
           </div>
         </div>
 
-        <div style={{ marginBottom: 14 }}>
+        <div style={{ marginBottom: 16 }}>
           <label>
             请求方法
             {draft.match.methods.length === 0 && (
@@ -251,34 +286,81 @@ export function RuleEditor({
           </div>
         </div>
 
-        <div className="row" style={{ gap: 10, alignItems: 'flex-start', marginBottom: 14 }}>
-          <div style={{ width: 86, flexShrink: 0 }}>
+        {/* ── 变体级配置 ── */}
+        <div className="editor__divider">
+          <span>变体</span>
+          <span className="faint" style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
+            同一接口的多份响应，切换即换数据源
+          </span>
+        </div>
+
+        <div className="vtabs">
+          {draft.variants.map((v, i) => (
+            <span key={i} className={`vtab${i === activeIdx ? ' vtab--on' : ''}`}>
+              <button
+                onClick={() => {
+                  setActiveIdx(i);
+                  setRenamingVariant(false);
+                }}
+              >
+                {v.name || `变体 ${i + 1}`}
+              </button>
+              {draft.variants.length > 1 && (
+                <button
+                  className="vtab__x"
+                  title="删除该变体"
+                  onClick={() => deleteVariant(i)}
+                >
+                  ×
+                </button>
+              )}
+            </span>
+          ))}
+          <button
+            className="vtab__add"
+            title="基于当前变体新增"
+            onClick={() => addVariant(`变体 ${draft.variants.length + 1}`)}
+          >
+            ＋
+          </button>
+        </div>
+
+        <div className="row" style={{ gap: 9, alignItems: 'flex-start', marginBottom: 12 }}>
+          <div style={{ width: 128, flexShrink: 0 }}>
+            <label>变体名</label>
+            <input
+              value={variant.name}
+              onFocus={() => setRenamingVariant(true)}
+              onBlur={() => setRenamingVariant(false)}
+              onChange={(e) => renameVariant(e.target.value)}
+              style={renamingVariant ? { borderColor: 'var(--accent)' } : undefined}
+            />
+          </div>
+          <div style={{ width: 82, flexShrink: 0 }}>
             <label>状态码</label>
             <input
               type="number"
-              value={draft.response.status}
+              value={variant.response.status}
               onChange={(e) => patchResponse({ status: Number(e.target.value) })}
             />
           </div>
-          <div style={{ width: 96, flexShrink: 0 }}>
-            <label>延迟 (ms)</label>
+          <div style={{ width: 92, flexShrink: 0 }}>
+            <label>延迟 ms</label>
             <input
               type="number"
-              value={draft.response.delayMs}
+              value={variant.response.delayMs}
               onChange={(e) => patchResponse({ delayMs: Number(e.target.value) })}
             />
           </div>
           <div className="grow">
             <label>响应外壳</label>
             <select
-              value={draft.response.shellTemplateId ?? ''}
+              value={variant.response.shellTemplateId ?? ''}
               onChange={(e) => patchResponse({ shellTemplateId: e.target.value || null })}
             >
-              <option value="">不套壳（body 即完整响应）</option>
+              <option value="">继承分组 / 项目默认</option>
               {shellTemplates.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
+                <option key={t.id} value={t.id}>{t.name}</option>
               ))}
             </select>
           </div>
@@ -287,15 +369,18 @@ export function RuleEditor({
         <div style={{ marginBottom: 12 }}>
           <div className="row" style={{ justifyContent: 'space-between', marginBottom: 4 }}>
             <label style={{ margin: 0 }}>
-              {draft.response.shellTemplateId ? '响应数据（填入外壳的 __DATA__ 位置）' : '响应体'}
+              {variant.response.shellTemplateId
+                ? '响应数据（填入外壳的 __DATA__ 位置）'
+                : '响应体'}
             </label>
             <div className="row" style={{ gap: 4 }}>
+              <span className="faint" style={{ fontSize: 10.5 }}>新建变体：</span>
               {SCENARIO_PRESETS.map((p) => (
                 <button
                   key={p.label}
                   className="tiny ghost"
-                  onClick={() => patchResponse(p.apply(draft.response.shellTemplateId))}
-                  title={p.hint}
+                  onClick={() => addVariant(p.label, p.response)}
+                  title={`以「${p.label}」新建一个变体`}
                 >
                   {p.label}
                 </button>
@@ -303,50 +388,34 @@ export function RuleEditor({
             </div>
           </div>
 
-          {/* 高度给足 —— 真实接口响应动辄几百行 */}
           <JsonEditor
-            value={draft.response.body}
+            key={`${activeIdx}-${draft.variants.length}`}
+            value={variant.response.body}
             onChange={(body) => patchResponse({ body })}
-            height="min(52vh, 560px)"
+            height="min(46vh, 520px)"
           />
         </div>
 
         {errors.map((i, n) => (
-          <div key={`e${n}`} className="banner banner-bad" style={{ marginTop: 7 }}>
-            ✗ {i.message}
-          </div>
+          <div key={`e${n}`} className="banner banner-bad" style={{ marginTop: 7 }}>✗ {i.message}</div>
         ))}
         {warnings.map((i, n) => (
-          <div key={`w${n}`} className="banner banner-warn" style={{ marginTop: 7 }}>
-            ⚠ {i.message}
-          </div>
+          <div key={`w${n}`} className="banner banner-warn" style={{ marginTop: 7 }}>⚠ {i.message}</div>
         ))}
       </div>
     </div>
   );
 }
 
-/** 场景预设（F11 的雏形）：把前端高频边界场景做成一键套用 */
-const SCENARIO_PRESETS = [
-  {
-    label: '空数据',
-    hint: '测空状态',
-    apply: (shellId: string | null) => ({
-      status: 200,
-      body: shellId ? '[]' : '{\n  "list": [],\n  "total": 0\n}',
-    }),
-  },
-  {
-    label: '500',
-    hint: '服务端错误',
-    apply: () => ({ status: 500, body: '{\n  "message": "Internal Server Error"\n}' }),
-  },
-  {
-    label: '401',
-    hint: '登录过期',
-    apply: () => ({ status: 401, body: '{\n  "message": "登录已过期"\n}' }),
-  },
-  { label: '慢 3 秒', hint: '测 loading 态', apply: () => ({ delayMs: 3000 }) },
+/**
+ * 场景预设 —— 现在是「新建一个变体」而不是覆盖当前 body。
+ * 这样原来的数据不会丢，用户可以在两者间来回切。
+ */
+const SCENARIO_PRESETS: { label: string; response: Partial<ResponseSpec> }[] = [
+  { label: '空数据', response: { status: 200, body: '{\n  "list": [],\n  "total": 0\n}' } },
+  { label: '500', response: { status: 500, body: '{\n  "message": "Internal Server Error"\n}' } },
+  { label: '401', response: { status: 401, body: '{\n  "message": "登录已过期"\n}' } },
+  { label: '慢 3 秒', response: { delayMs: 3000 } },
 ];
 
 function KindOption({
@@ -374,9 +443,7 @@ function KindOption({
       }}
     >
       <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 2 }}>{title}</div>
-      <div className="muted" style={{ fontSize: 10.5, lineHeight: 1.45 }}>
-        {desc}
-      </div>
+      <div className="muted" style={{ fontSize: 10.5, lineHeight: 1.45 }}>{desc}</div>
     </div>
   );
 }
@@ -393,6 +460,11 @@ function placeholderFor(mode: RuleDraft['match']['urlMode']): string {
 }
 
 function toDraft(rule: Rule): RuleDraft {
-  const { id: _id, meta, ...rest } = rule;
-  return { ...rest, meta: { source: meta.source } };
+  const { id: _id, meta, variants, activeVariantId, ...rest } = rule;
+  return {
+    ...rest,
+    variants: variants.map((v) => ({ id: v.id, name: v.name, response: v.response })),
+    activeVariantIndex: Math.max(0, variants.findIndex((v) => v.id === activeVariantId)),
+    meta: { source: meta.source },
+  };
 }

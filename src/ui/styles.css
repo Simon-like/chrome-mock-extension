@@ -384,6 +384,201 @@ label {
   border-radius: 3px;
 }
 
+/* ── 变体切换器 ────────────────────────────────────── */
+
+.vsel {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px 1px 7px;
+  border-radius: 99px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  font-size: 10.5px;
+  color: var(--muted);
+  flex-shrink: 0;
+  position: relative;
+  cursor: pointer;
+  user-select: none;
+}
+.vsel:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.vsel__name {
+  font-weight: 550;
+}
+.vsel__caret {
+  font-size: 8px;
+  color: var(--faint);
+}
+/* 非首个变体高亮 —— 扫一眼列表就知道哪些接口被切走了 */
+.vsel--alt {
+  border-color: var(--warn);
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.vsel--alt .vsel__caret {
+  color: var(--warn);
+}
+
+.vpop {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  z-index: 40;
+  min-width: 180px;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  cursor: default;
+}
+.vpop button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  text-align: left;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  font-size: 11.5px;
+  color: var(--fg);
+}
+.vpop button:hover {
+  background: var(--surface-hover);
+}
+.vpop button.on {
+  color: var(--accent);
+  font-weight: 600;
+}
+.vpop__check {
+  width: 11px;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+.vpop__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vpop__meta {
+  font-size: 10px;
+  color: var(--faint);
+  font-weight: 400;
+  flex-shrink: 0;
+}
+.vpop__sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+.vpop__add {
+  color: var(--muted) !important;
+  font-size: 11px !important;
+}
+
+/* ── 编辑器里的变体标签页 ──────────────────────────── */
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border-left: 1px solid var(--border);
+  background: var(--bg);
+}
+.editor__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.editor__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  min-height: 0;
+}
+.editor__divider {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 4px 0 9px;
+  padding-top: 13px;
+  border-top: 1px solid var(--border);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.vtabs {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-bottom: 11px;
+  flex-wrap: wrap;
+}
+.vtab {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  overflow: hidden;
+}
+.vtab > button {
+  padding: 3px 9px;
+  border: none;
+  background: transparent;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.vtab:hover {
+  background: var(--surface-hover);
+}
+.vtab--on {
+  background: var(--accent-soft);
+  border-color: var(--accent-line, var(--accent));
+}
+.vtab--on > button {
+  color: var(--accent);
+  font-weight: 600;
+}
+.vtab__x {
+  padding: 3px 6px 3px 2px !important;
+  font-size: 12px !important;
+  color: var(--faint) !important;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.vtab:hover .vtab__x {
+  opacity: 1;
+}
+.vtab__x:hover {
+  color: var(--bad) !important;
+}
+.vtab__add {
+  padding: 3px 9px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--faint);
+  font-size: 12px;
+}
+.vtab__add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: transparent;
+}
+
 /* ── 分组 ─────────────────────────────────────────── */
 
 .group-section {

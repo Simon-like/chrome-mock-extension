@@ -1,9 +1,10 @@
 /**
  * Options 页 —— 规则管理主界面
  *
- * 两个容易搞混的概念，UI 上必须区分清楚：
+ * 三个层次，UI 上要区分清楚：
  *   - 规则列表顺序 = 匹配优先级（先到先得），所以支持上下移动
- *   - 分组 = 组织 + 批量开关；其中「互斥组」即场景，同一时刻只有一个生效
+ *   - 分组 = 组织 + 批量开关，纯粹的容器
+ *   - 变体 = 同一接口的多份响应，在规则行上直接切换
  */
 
 import { useMemo, useState } from 'react';
@@ -11,6 +12,8 @@ import { findShadowedRules } from '@core/store/validate.js';
 import type { Group, Rule, RuleDraft } from '@core/types.js';
 import { useStore } from '@ui/useStore.js';
 import { Splitter, useResizable } from '@ui/Splitter.js';
+import { VariantSwitcher } from '@ui/VariantSwitcher.js';
+import { getActiveVariant } from '@core/store/defaults.js';
 import { RuleEditor } from './RuleEditor.js';
 import { GroupSection } from './GroupSection.js';
 
@@ -87,7 +90,7 @@ export function Options() {
     const rule = store.rules.find((r) => r.id === ruleId);
     if (!rule || rule.groupId === groupId) return;
 
-    void run({ type: 'MOVE_RULE_TO_GROUP', payload: { id: ruleId, groupId } });
+    void run({ type: 'MOVE_RULE', payload: { id: ruleId, groupId } });
   };
 
   const allowDrop = (e: React.DragEvent, key: string) => {
@@ -142,16 +145,16 @@ export function Options() {
     }
   };
 
-  const createGroup = async (exclusive: boolean) => {
-    const name = exclusive ? '新场景' : '新分组';
-    const res = await run({ type: 'CREATE_GROUP', payload: { name, exclusive } });
-    if (res.ok) flash(exclusive ? '已新建场景（双击名称可重命名）' : '已新建分组（双击名称可重命名）');
+  const createGroup = async () => {
+    const res = await run({
+      type: 'CREATE_GROUP',
+      payload: { name: '新分组', projectId: store.activeProjectId },
+    });
+    if (res.ok) flash('已新建分组（双击名称可重命名）');
   };
 
   // ── 数据整理 ──────────────────────────────────────
   const rulesOf = (groupId: string | null) => store.rules.filter((r) => r.groupId === groupId);
-  const exclusiveGroups = store.groups.filter((g) => g.exclusive);
-  const activeScenario = exclusiveGroups.find((g) => g.enabled);
 
   const activeCount = store.rules.filter((r) => r.enabled).length;
   const virtualCount = store.rules.filter((r) => r.enabled && r.kind === 'virtual').length;
@@ -192,7 +195,10 @@ export function Options() {
           void run({ type: 'REORDER_RULE', payload: { id: rule.id, toIndex: idx + dir } })
         }
         onChangeGroup={(groupId) =>
-          void run({ type: 'MOVE_RULE_TO_GROUP', payload: { id: rule.id, groupId } })
+          void run({ type: 'MOVE_RULE', payload: { id: rule.id, groupId } })
+        }
+        onSwitchVariant={(variantId) =>
+          void run({ type: 'SET_ACTIVE_VARIANT', payload: { ruleId: rule.id, variantId } })
         }
       />
     );
@@ -209,7 +215,6 @@ export function Options() {
         key={key}
         group={group}
         rules={rules}
-        isExclusive={group?.exclusive ?? false}
         collapsed={group?.collapsed ?? false}
         dropActive={dropTarget === key}
         onDragOver={(e) => allowDrop(e, key)}
@@ -227,10 +232,6 @@ export function Options() {
         }
         onRename={(name) =>
           group && void run({ type: 'UPDATE_GROUP', payload: { id: group.id, patch: { name } } })
-        }
-        onSetExclusive={(exclusive) =>
-          group &&
-          void run({ type: 'UPDATE_GROUP', payload: { id: group.id, patch: { exclusive } } })
         }
         onDelete={() => group && void run({ type: 'DELETE_GROUP', payload: { id: group.id } })}
       >
@@ -253,33 +254,7 @@ export function Options() {
               </span>
             </div>
             <div className="row" style={{ gap: 8 }}>
-              {/* 当前场景常驻顶栏 —— 用户随时该知道自己在哪个场景下 */}
-              {exclusiveGroups.length > 0 && (
-                <span className="row" style={{ gap: 5, fontSize: 11.5 }}>
-                  <span className="faint">场景</span>
-                  <select
-                    value={activeScenario?.id ?? ''}
-                    onChange={(e) => {
-                      const id = e.target.value;
-                      if (id) void run({ type: 'TOGGLE_GROUP', payload: { id, enabled: true } });
-                      else if (activeScenario)
-                        void run({
-                          type: 'TOGGLE_GROUP',
-                          payload: { id: activeScenario.id, enabled: false },
-                        });
-                    }}
-                    style={{ width: 'auto', minWidth: 110, padding: '3px 6px' }}
-                  >
-                    <option value="">（全部关闭）</option>
-                    {exclusiveGroups.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.name}
-                      </option>
-                    ))}
-                  </select>
-                </span>
-              )}
-              <button
+                            <button
                 className={store.enabled ? 'primary' : ''}
                 onClick={() =>
                   void run({ type: 'SET_GLOBAL_ENABLED', payload: { enabled: !store.enabled } })
@@ -299,10 +274,7 @@ export function Options() {
           <button className="primary" onClick={() => setEditing({ mode: 'new', groupId: null })}>
             + 新建规则
           </button>
-          <button onClick={() => createGroup(false)}>+ 分组</button>
-          <button onClick={() => createGroup(true)} title="互斥分组，同一时刻只有一个生效">
-            + 场景
-          </button>
+          <button onClick={createGroup}>+ 分组</button>
           <input
             placeholder="搜索规则名或 URL"
             value={keyword}
@@ -361,6 +333,7 @@ export function Options() {
                   ? store.rules.find((r) => r.id === editing.ruleId)
                   : undefined
               }
+              projects={store.projects}
               groups={store.groups}
               shellTemplates={store.shellTemplates}
               onSave={save}
@@ -389,6 +362,7 @@ function RuleItem({
   onDuplicate,
   onMove,
   onChangeGroup,
+  onSwitchVariant,
 }: {
   rule: Rule;
   index: number;
@@ -405,7 +379,9 @@ function RuleItem({
   onDuplicate: () => void;
   onMove: (dir: number) => void;
   onChangeGroup: (groupId: string | null) => void;
+  onSwitchVariant: (variantId: string) => void;
 }) {
+  const active = getActiveVariant(rule);
   const cls = [
     'rule-item',
     selected && 'selected',
@@ -421,9 +397,12 @@ function RuleItem({
         <span className="rule-item__grip" title="拖动可移到其他分组">⠿</span>
         <input type="checkbox" checked={rule.enabled} onChange={(e) => onToggle(e.target.checked)} />
         <span className={`tag tag-${rule.kind}`}>{rule.kind === 'virtual' ? '虚拟' : '覆盖'}</span>
-        <span className="grow truncate" style={{ fontWeight: 500 }}>
+        <span className="truncate" style={{ fontWeight: 500, maxWidth: '48%' }}>
           {rule.name}
         </span>
+        {/* 变体切换 —— 最高频操作，直接放在行上，不用进编辑器 */}
+        <VariantSwitcher rule={rule} onSwitch={onSwitchVariant} />
+        <span className="grow" />
 
         <span
           className={rule.enabled && rule.meta.hitCount === 0 ? 'faint' : 'muted'}
@@ -468,9 +447,9 @@ function RuleItem({
           {rule.match.methods.length > 0 && (
             <span className="faint"> · {rule.match.methods.join('/')}</span>
           )}
-          <span className="faint"> · {rule.response.status}</span>
-          {rule.response.delayMs > 0 && (
-            <span className="faint"> · 延迟 {rule.response.delayMs}ms</span>
+          <span className="faint"> · {active.response.status}</span>
+          {active.response.delayMs > 0 && (
+            <span className="faint"> · 延迟 {active.response.delayMs}ms</span>
           )}
         </div>
 

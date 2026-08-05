@@ -74,7 +74,14 @@ export function PanelApp() {
 
   /** F6 的核心动线：点一下 → 真实响应自动填进编辑器 */
   const convertToMock = (entry: CapturedRequest) => {
-    setDraft(captureToRuleDraft(entry, store?.shellTemplates ?? []));
+    setDraft(
+      captureToRuleDraft(entry, {
+        shellTemplates: store?.shellTemplates ?? [],
+        projectId: store?.activeProjectId ?? null,
+        // 抓包转 Mock 后多半接着就要测空态和报错，预先建好省一步
+        withPresetVariants: true,
+      }),
+    );
     setDraftKey((k) => k + 1);
     setCreatedId(null); // 换了一条请求，重新算作新建
     setSelected(entry);
@@ -165,6 +172,8 @@ export function PanelApp() {
           <RuleEditor
             key={draftKey}
             initialDraft={draft}
+            projects={store?.projects}
+            groups={store?.groups}
             shellTemplates={store?.shellTemplates ?? []}
             onSave={saveDraft}
             onClose={closeEditor}
