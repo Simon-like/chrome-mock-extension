@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mock Studio · 布局原型</title>
+<style>
+:root{
+  color-scheme: light dark;
+  --bg:#fbfbfc; --panel:#fff; --fg:#16181d; --muted:#6b7280; --faint:#9ca3af;
+  --line:#eceef1; --line-2:#e2e5ea;
+  --accent:#3b6ef5; --accent-soft:rgba(59,110,245,.08); --accent-line:rgba(59,110,245,.35);
+  --ok:#15803d; --ok-soft:rgba(21,128,61,.09);
+  --warn:#b45309; --warn-soft:rgba(180,83,9,.10);
+  --r:7px;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0f1115; --panel:#15181e; --fg:#e7e9ee; --muted:#98a0ad; --faint:#68707d;
+    --line:#22262e; --line-2:#2c313a;
+    --accent:#5b87f7; --accent-soft:rgba(91,135,247,.13); --accent-line:rgba(91,135,247,.4);
+    --ok:#4ade80; --ok-soft:rgba(74,222,128,.12);
+    --warn:#fbbf24; --warn-soft:rgba(251,191,36,.12);
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--bg);color:var(--fg);
+  font:13px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,select{font:inherit;color:inherit}
+
+/* 说明条 */
+.note{
+  padding:9px 18px;background:var(--accent-soft);border-bottom:1px solid var(--line);
+  font-size:11.5px;color:var(--muted);display:flex;gap:14px;align-items:center;flex-wrap:wrap;
+}
+.note b{color:var(--fg)}
+.note code{background:rgba(128,128,128,.14);padding:1px 5px;border-radius:4px;font-size:11px}
+
+.app{height:calc(100vh - 38px);display:flex;flex-direction:column;background:var(--panel)}
+
+/* ── 顶栏 ── */
+.top{
+  display:flex;align-items:center;gap:18px;padding:0 18px;height:52px;
+  border-bottom:1px solid var(--line);flex-shrink:0;
+}
+.brand{font-size:14.5px;font-weight:650;letter-spacing:-.2px}
+.selector{display:flex;align-items:center;gap:7px}
+.selector>span{font-size:11px;color:var(--faint)}
+.sel{
+  display:flex;align-items:center;gap:6px;padding:4px 9px;border-radius:var(--r);
+  border:1px solid var(--line-2);background:var(--panel);font-size:12.5px;font-weight:500;
+}
+.sel:hover{border-color:var(--accent-line)}
+.sel .caret{color:var(--faint);font-size:9px}
+.sel .dot{width:6px;height:6px;border-radius:50%;background:var(--warn)}
+.dirty{font-size:10.5px;color:var(--warn);margin-left:2px}
+.grow{flex:1}
+.switch{
+  display:flex;align-items:center;gap:7px;padding:5px 12px;border-radius:99px;
+  background:var(--accent);color:#fff;font-size:12px;font-weight:500;
+}
+.switch .led{width:6px;height:6px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px rgba(255,255,255,.28)}
+
+/* ── 主体 ── */
+.body{flex:1;display:flex;min-height:0}
+
+/* ── 侧栏 ── */
+.side{
+  width:236px;flex-shrink:0;border-right:1px solid var(--line);
+  display:flex;flex-direction:column;min-height:0;background:var(--bg);
+}
+.side__search{padding:11px 12px 8px}
+.side__search input{
+  width:100%;padding:5px 9px;border:1px solid var(--line-2);border-radius:var(--r);
+  background:var(--panel);font-size:12px;
+}
+.side__search input:focus{outline:none;border-color:var(--accent-line)}
+.side__scroll{flex:1;overflow-y:auto;padding:0 8px 10px}
+.side__label{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:9px 6px 5px;font-size:10px;font-weight:650;letter-spacing:.7px;
+  text-transform:uppercase;color:var(--faint);
+}
+.side__label button{color:var(--faint);font-size:13px;line-height:1;padding:2px 5px;border-radius:4px}
+.side__label button:hover{background:var(--line);color:var(--fg)}
+
+.proj{
+  display:block;width:100%;text-align:left;padding:7px 9px;border-radius:var(--r);
+  position:relative;margin-bottom:1px;
+}
+.proj:hover{background:var(--line)}
+.proj.on{background:var(--accent-soft)}
+/* 当前项目用左侧色条标识，比整块填充更克制 */
+.proj.on::before{
+  content:"";position:absolute;left:0;top:7px;bottom:7px;width:2.5px;
+  border-radius:2px;background:var(--accent);
+}
+.proj__row{display:flex;align-items:center;gap:6px}
+.proj__name{font-size:12.5px;font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.proj.on .proj__name{color:var(--accent)}
+.proj__n{font-size:10.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+.proj__host{
+  font-size:10.5px;color:var(--faint);margin-top:1px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+.side__pager{
+  display:flex;align-items:center;justify-content:center;gap:9px;
+  padding:7px 0 3px;font-size:11px;color:var(--faint);
+}
+.side__pager button{padding:1px 6px;border-radius:4px;color:var(--muted)}
+.side__pager button:hover{background:var(--line)}
+
+/* ── 主区 ── */
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.main__head{padding:15px 22px 0;flex-shrink:0}
+.main__title{display:flex;align-items:center;gap:9px}
+.main__title h1{margin:0;font-size:17px;font-weight:650;letter-spacing:-.3px}
+.chip{
+  font-size:10.5px;padding:1.5px 7px;border-radius:99px;
+  background:var(--line);color:var(--muted);font-family:ui-monospace,Menlo,monospace;
+}
+.main__sub{margin-top:3px;font-size:11.5px;color:var(--faint)}
+.iconbtn{padding:4px 8px;border-radius:var(--r);color:var(--muted);font-size:12px}
+.iconbtn:hover{background:var(--line);color:var(--fg)}
+
+.toolbar{display:flex;align-items:center;gap:8px;padding:14px 22px 12px;flex-shrink:0}
+.btn{
+  padding:5px 11px;border-radius:var(--r);border:1px solid var(--line-2);
+  background:var(--panel);font-size:12px;
+}
+.btn:hover{background:var(--line)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:500}
+.btn.pri:hover{opacity:.9;background:var(--accent)}
+.toolbar input[type=search]{
+  padding:5px 9px;border:1px solid var(--line-2);border-radius:var(--r);
+  background:var(--panel);font-size:12px;width:180px;
+}
+.toolbar input:focus{outline:none;border-color:var(--accent-line)}
+
+.list{flex:1;overflow-y:auto;padding:0 22px 16px}
+
+/* 分组标题：不用框，靠留白 + 分隔线 */
+.grp{margin-top:22px}
+.grp:first-child{margin-top:4px}
+.grp__head{
+  display:flex;align-items:center;gap:9px;padding:0 2px 7px;
+  border-bottom:1px solid var(--line-2);
+}
+.grp__caret{color:var(--faint);font-size:9px;padding:2px;border-radius:3px}
+.grp__caret:hover{background:var(--line);color:var(--fg)}
+.grp__name{font-size:12.5px;font-weight:650;letter-spacing:-.1px}
+.grp__n{font-size:10.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+.grp__more{margin-left:auto;color:var(--faint);padding:2px 6px;border-radius:4px;opacity:0;transition:opacity .12s}
+.grp:hover .grp__more{opacity:1}
+.grp__more:hover{background:var(--line);color:var(--fg)}
+.grp--off .grp__name{color:var(--faint)}
+
+/* 规则行：极淡分隔线，无外框 */
+.rule{
+  display:flex;align-items:flex-start;gap:10px;padding:9px 8px;
+  border-bottom:1px solid var(--line);border-radius:6px;cursor:pointer;
+}
+.rule:hover{background:var(--bg)}
+.rule.on{background:var(--accent-soft)}
+.rule.off{opacity:.5}
+.rule__cb{margin-top:2px;accent-color:var(--accent);cursor:pointer}
+.rule__grip{color:var(--faint);font-size:10px;margin-top:3px;cursor:grab;opacity:0;transition:opacity .12s}
+.rule:hover .rule__grip{opacity:1}
+.rule__main{flex:1;min-width:0}
+.rule__top{display:flex;align-items:center;gap:7px}
+.rule__name{font-size:12.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rule__meta{
+  font-size:11px;color:var(--faint);margin-top:2px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.rule__right{display:flex;align-items:center;gap:5px;flex-shrink:0}
+.rule__hits{font-size:10.5px;color:var(--faint);font-variant-numeric:tabular-nums;min-width:34px;text-align:right}
+.rule__acts{display:flex;gap:1px;opacity:0;transition:opacity .12s}
+.rule:hover .rule__acts,.rule.on .rule__acts{opacity:1}
+.rule__acts button{padding:2px 6px;border-radius:4px;color:var(--faint);font-size:11px}
+.rule__acts button:hover{background:var(--line);color:var(--fg)}
+
+.tag{font-size:9.5px;font-weight:650;padding:1px 6px;border-radius:4px;letter-spacing:.2px;flex-shrink:0}
+.tag--ov{background:var(--accent-soft);color:var(--accent)}
+.tag--vi{background:var(--warn-soft);color:var(--warn)}
+.hint{font-size:10.5px;color:var(--faint);margin-top:3px}
+.hint.warn{color:var(--warn)}
+
+/* 底栏分页 */
+.foot{
+  display:flex;align-items:center;gap:14px;padding:9px 22px;
+  border-top:1px solid var(--line);flex-shrink:0;font-size:11.5px;color:var(--faint);
+}
+.pager{display:flex;align-items:center;gap:3px;margin-left:auto}
+.pager button{min-width:24px;height:24px;border-radius:5px;font-size:11.5px;color:var(--muted)}
+.pager button:hover{background:var(--line);color:var(--fg)}
+.pager button.on{background:var(--accent);color:#fff;font-weight:600}
+.foot select{
+  padding:2px 5px;border:1px solid var(--line-2);border-radius:5px;
+  background:var(--panel);font-size:11px;
+}
+
+/* ── 编辑器 ── */
+.split{width:1px;background:var(--line-2);cursor:col-resize;flex-shrink:0}
+.split:hover{background:var(--accent)}
+.editor{width:400px;flex-shrink:0;border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.editor__head{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:13px 16px;border-bottom:1px solid var(--line);flex-shrink:0;
+}
+.editor__head strong{font-size:13px}
+.editor__body{flex:1;overflow-y:auto;padding:16px}
+.fld{margin-bottom:13px}
+.fld label{display:block;font-size:10.5px;font-weight:500;color:var(--muted);margin-bottom:4px}
+.fld input,.fld select{
+  width:100%;padding:6px 9px;border:1px solid var(--line-2);border-radius:var(--r);
+  background:var(--panel);font-size:12px;
+}
+.fld input:focus,.fld select:focus{outline:none;border-color:var(--accent-line);box-shadow:0 0 0 3px var(--accent-soft)}
+.row2{display:flex;gap:9px}
+.kind{display:flex;gap:8px}
+.kind div{
+  flex:1;padding:8px 10px;border:1px solid var(--line-2);border-radius:var(--r);cursor:pointer;
+}
+.kind div.on{border-color:var(--accent);background:var(--accent-soft)}
+.kind b{display:block;font-size:12px;margin-bottom:1px}
+.kind span{font-size:10px;color:var(--muted);line-height:1.4}
+.code{
+  border:1px solid var(--line-2);border-radius:var(--r);overflow:hidden;
+}
+.code__bar{
+  display:flex;align-items:center;gap:3px;padding:4px 7px;
+  background:var(--bg);border-bottom:1px solid var(--line);
+}
+.code__bar button{padding:2px 7px;border-radius:4px;font-size:10.5px;color:var(--muted)}
+.code__bar button:hover{background:var(--line);color:var(--fg)}
+.code__bar .st{margin-left:auto;font-size:10.5px;color:var(--faint)}
+.code pre{
+  margin:0;padding:9px 11px;font-size:11.5px;line-height:1.55;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  max-height:230px;overflow:auto;
+}
+.code .k{color:#8250df}.code .s{color:#0a7d3f}.code .n{color:#b45309}
+@media (prefers-color-scheme: dark){
+  .code .k{color:#c297f5}.code .s{color:#7ee2a8}.code .n{color:#f5c46b}
+}
+
+/* 场景弹层 */
+.pop{
+  position:absolute;top:44px;z-index:30;min-width:230px;padding:5px;
+  background:var(--panel);border:1px solid var(--line-2);border-radius:9px;
+  box-shadow:0 8px 26px rgba(0,0,0,.13);
+}
+.pop__t{padding:6px 9px 4px;font-size:10px;font-weight:650;letter-spacing:.6px;text-transform:uppercase;color:var(--faint)}
+.pop button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:6px 9px;border-radius:6px;font-size:12px}
+.pop button:hover{background:var(--line)}
+.pop button.on{color:var(--accent);font-weight:600}
+.pop button .ck{width:12px;font-size:11px}
+.pop hr{border:none;border-top:1px solid var(--line);margin:4px 0}
+.pop .sub{font-size:10px;color:var(--faint);padding:2px 9px 5px;line-height:1.45}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:5px;border:2px solid var(--panel)}
+::-webkit-scrollbar-track{background:transparent}
+</style>
+</head>
+<body>
+
+<div class="note">
+  <b>布局原型</b>
+  <span>点<code>场景</code>下拉看状态快照交互 · 点项目切换 · 点规则看编辑器 · 支持深浅色</span>
+  <span style="margin-left:auto">静态原型，非真实功能</span>
+</div>
+
+<div class="app">
+
+  <!-- 顶栏 -->
+  <div class="top">
+    <div class="brand">Mock Studio</div>
+
+    <div class="selector">
+      <span>项目</span>
+      <button class="sel" onclick="toggle('projPop')">
+        <span id="curProj">金链运营平台</span><span class="caret">▾</span>
+      </button>
+    </div>
+
+    <div class="selector" style="position:relative">
+      <span>场景</span>
+      <button class="sel" onclick="toggle('scenPop')">
+        <span class="dot"></span>
+        <span id="curScen">全空态</span>
+        <span class="dirty" id="dirty">· 已修改</span>
+        <span class="caret">▾</span>
+      </button>
+
+      <!-- 场景 = 状态快照，不是容器。所以它住在顶栏，不在列表里 -->
+      <div class="pop" id="scenPop" style="display:none;left:38px">
+        <div class="pop__t">切换场景</div>
+        <button onclick="setScen('未使用场景',this)"><span class="ck"></span>未使用场景</button>
+        <button onclick="setScen('正常态',this)"><span class="ck"></span>正常态</button>
+        <button class="on" onclick="setScen('全空态',this)"><span class="ck">✓</span>全空态</button>
+        <button onclick="setScen('全错态',this)"><span class="ck"></span>全错态</button>
+        <button onclick="setScen('弱网测试',this)"><span class="ck"></span>弱网测试</button>
+        <hr>
+        <button>保存当前状态为新场景…</button>
+        <button>用当前状态更新「全空态」</button>
+        <div class="sub">场景记录「哪些规则处于启用」，一条规则可被多个场景引用</div>
+      </div>
+    </div>
+
+    <div class="grow"></div>
+    <button class="switch"><span class="led"></span>已启用</button>
+  </div>
+
+  <div class="body">
+
+    <!-- 侧栏 -->
+    <div class="side">
+      <div class="side__search"><input placeholder="搜索项目…" /></div>
+      <div class="side__scroll">
+
+        <div class="side__label"><span>项目</span><button title="新建项目">＋</button></div>
+
+        <button class="proj on" onclick="pickProj(this,'金链运营平台')">
+          <div class="proj__row"><span class="proj__name">金链运营平台</span><span class="proj__n">12</span></div>
+          <div class="proj__host">dev2.glink.jd.com +1</div>
+        </button>
+        <button class="proj" onclick="pickProj(this,'支付中台')">
+          <div class="proj__row"><span class="proj__name">支付中台</span><span class="proj__n">8</span></div>
+          <div class="proj__host">pay.jd.com</div>
+        </button>
+        <button class="proj" onclick="pickProj(this,'活动页')">
+          <div class="proj__row"><span class="proj__name">活动页</span><span class="proj__n">3</span></div>
+          <div class="proj__host">act.jd.com</div>
+        </button>
+        <button class="proj" onclick="pickProj(this,'内部工具')">
+          <div class="proj__row"><span class="proj__name">内部工具</span><span class="proj__n">5</span></div>
+          <div class="proj__host">未绑定域名</div>
+        </button>
+
+        <div class="side__pager"><button>‹</button><span>1 / 2</span><button>›</button></div>
+
+        <div class="side__label"><span>全局分组</span><button title="新建分组">＋</button></div>
+        <button class="proj" onclick="pickProj(this,'通用错误码')">
+          <div class="proj__row"><span class="proj__name">通用错误码</span><span class="proj__n">4</span></div>
+        </button>
+
+        <div class="side__label"><span>未归档</span></div>
+        <button class="proj" onclick="pickProj(this,'未归档')">
+          <div class="proj__row"><span class="proj__name">未归档规则</span><span class="proj__n">5</span></div>
+        </button>
+      </div>
+    </div>
+
+    <!-- 主区 -->
+    <div class="main">
+      <div class="main__head">
+        <div class="main__title">
+          <h1 id="mainTitle">金链运营平台</h1>
+          <span class="chip">白名单</span>
+          <div class="grow"></div>
+          <button class="iconbtn">⚙ 项目设置</button>
+        </div>
+        <div class="main__sub">dev2.glink.jd.com · test-glink.jd.com</div>
+      </div>
+
+      <div class="toolbar">
+        <button class="btn pri">+ 新建规则</button>
+        <button class="btn">+ 分组</button>
+        <input type="search" placeholder="搜索规则名或 URL" />
+        <div class="grow"></div>
+        <button class="btn">导入</button>
+        <button class="btn">导出</button>
+      </div>
+
+      <div class="list">
+
+        <div class="grp">
+          <div class="grp__head">
+            <button class="grp__caret">▾</button>
+            <input type="checkbox" checked style="accent-color:var(--accent)">
+            <span class="grp__name">商品模块</span>
+            <span class="grp__n">3 条 · 2 启用</span>
+            <button class="grp__more">⋯</button>
+          </div>
+
+          <div class="rule on" onclick="pickRule(this)">
+            <span class="rule__grip">⠿</span>
+            <input type="checkbox" class="rule__cb" checked onclick="event.stopPropagation()">
+            <div class="rule__main">
+              <div class="rule__top"><span class="tag tag--ov">覆盖</span><span class="rule__name">商品列表</span></div>
+              <div class="rule__meta">/api/goods/list · POST · 200</div>
+            </div>
+            <div class="rule__right">
+              <span class="rule__hits">12 次</span>
+              <div class="rule__acts"><button>复制</button><button>删除</button></div>
+            </div>
+          </div>
+
+          <div class="rule" onclick="pickRule(this)">
+            <span class="rule__grip">⠿</span>
+            <input type="checkbox" class="rule__cb" checked onclick="event.stopPropagation()">
+            <div class="rule__main">
+              <div class="rule__top"><span class="tag tag--ov">覆盖</span><span class="rule__name">商品详情</span></div>
+              <div class="rule__meta">/api/goods/detail · GET · 200 · 延迟 300ms</div>
+            </div>
+            <div class="rule__right">
+              <span class="rule__hits">4 次</span>
+              <div class="rule__acts"><button>复制</button><button>删除</button></div>
+            </div>
+          </div>
+
+          <div class="rule off" onclick="pickRule(this)">
+            <span class="rule__grip">⠿</span>
+            <input type="checkbox" class="rule__cb" onclick="event.stopPropagation()">
+            <div class="rule__main">
+              <div class="rule__top"><span class="tag tag--vi">虚拟</span><span class="rule__name">库存查询</span></div>
+              <div class="rule__meta">/api/stock/query · GET · 200</div>
+            </div>
+            <div class="rule__right">
+              <span class="rule__hits">0 次</span>
+              <div class="rule__acts"><button>复制</button><button>删除</button></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grp">
+          <div class="grp__head">
+            <button class="grp__caret">▾</button>
+            <input type="checkbox" checked style="accent-color:var(--accent)">
+            <span class="grp__name">订单模块</span>
+            <span class="grp__n">2 条</span>
+            <button class="grp__more">⋯</button>
+          </div>
+
+          <div class="rule" onclick="pickRule(this)">
+            <span class="rule__grip">⠿</span>
+            <input type="checkbox" class="rule__cb" checked onclick="event.stopPropagation()">
+            <div class="rule__main">
+              <div class="rule__top"><span class="tag tag--ov">覆盖</span><span class="rule__name">下单接口 · 500</span></div>
+              <div class="rule__meta">/api/order/create · POST · 500</div>
+            </div>
+            <div class="rule__right">
+              <span class="rule__hits">1 次</span>
+              <div class="rule__acts"><button>复制</button><button>删除</button></div>
+            </div>
+          </div>
+
+          <div class="rule" onclick="pickRule(this)">
+            <span class="rule__grip">⠿</span>
+            <input type="checkbox" class="rule__cb" checked onclick="event.stopPropagation()">
+            <div class="rule__main">
+              <div class="rule__top"><span class="tag tag--vi">虚拟</span><span class="rule__name">订单列表</span></div>
+              <div class="rule__meta">/api/order/list · GET · 200</div>
+              <!-- 诊断提示：这类「配了但不生效」必须显式暴露 -->
+              <div class="hint">尚未命中过 —— 若预期已生效，请检查匹配条件</div>
+            </div>
+            <div class="rule__right">
+              <span class="rule__hits">0 次</span>
+              <div class="rule__acts"><button>复制</button><button>删除</button></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grp grp--off">
+          <div class="grp__head">
+            <button class="grp__caret">▸</button>
+            <input type="checkbox" style="accent-color:var(--accent)">
+            <span class="grp__name">消息中心</span>
+            <span class="grp__n">4 条 · 已停用</span>
+            <button class="grp__more">⋯</button>
+          </div>
+        </div>
+
+        <div class="grp">
+          <div class="grp__head">
+            <button class="grp__caret">▾</button>
+            <span style="width:13px"></span>
+            <span class="grp__name">未分组</span>
+            <span class="grp__n">1 条</span>
+          </div>
+          <div class="rule" onclick="pickRule(this)">
+            <span class="rule__grip">⠿</span>
+            <input type="checkbox" class="rule__cb" checked onclick="event.stopPropagation()">
+            <div class="rule__main">
+              <div class="rule__top"><span class="tag tag--ov">覆盖</span><span class="rule__name">用户信息</span></div>
+              <div class="rule__meta">/api/user/info · GET · 200</div>
+              <div class="hint warn">⚠ 本规则限定 a.com，与项目域名无交集，不会命中</div>
+            </div>
+            <div class="rule__right">
+              <span class="rule__hits">0 次</span>
+              <div class="rule__acts"><button>复制</button><button>删除</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="foot">
+        <span>共 <b style="color:var(--fg)">42</b> 条规则 · 9 条启用 · 3 个虚拟接口</span>
+        <div class="pager">
+          <button>‹</button>
+          <button class="on">1</button><button>2</button><button>3</button>
+          <button>›</button>
+        </div>
+        <select><option>20 / 页</option><option>50 / 页</option><option>100 / 页</option></select>
+      </div>
+    </div>
+
+    <div class="split"></div>
+
+    <!-- 编辑器 -->
+    <div class="editor">
+      <div class="editor__head">
+        <strong>编辑规则</strong>
+        <div style="display:flex;gap:7px;align-items:center">
+          <span style="font-size:10.5px;color:var(--faint)">⌘S 保存</span>
+          <button class="btn">关闭</button>
+          <button class="btn pri">保存</button>
+        </div>
+      </div>
+
+      <div class="editor__body">
+        <div class="row2">
+          <div class="fld grow"><label>规则名</label><input value="商品列表" /></div>
+          <div class="fld" style="width:118px"><label>分组</label>
+            <select><option>商品模块</option><option>订单模块</option><option>未分组</option></select>
+          </div>
+        </div>
+
+        <div class="fld">
+          <label>类型</label>
+          <div class="kind">
+            <div class="on"><b>覆盖已有接口</b><span>停用后回到真实数据</span></div>
+            <div><b>新建虚拟接口</b><span>停用后请求会失败</span></div>
+          </div>
+        </div>
+
+        <div class="fld">
+          <label>URL 匹配</label>
+          <div class="row2">
+            <select style="width:88px"><option>包含</option><option>通配符</option><option>正则</option></select>
+            <input value="/api/goods/list" style="font-family:ui-monospace,Menlo,monospace" />
+          </div>
+        </div>
+
+        <div class="row2">
+          <div class="fld" style="width:82px"><label>状态码</label><input value="200" /></div>
+          <div class="fld" style="width:92px"><label>延迟 ms</label><input value="0" /></div>
+          <div class="fld grow"><label>响应外壳</label>
+            <select><option>项目默认 · status/message/data</option><option>不套壳</option></select>
+          </div>
+        </div>
+
+        <div class="fld">
+          <label style="display:flex;justify-content:space-between">
+            <span>响应数据</span>
+            <span style="color:var(--faint);font-weight:400">空数据 · 500 · 401 · 慢 3 秒</span>
+          </label>
+          <div class="code">
+            <div class="code__bar">
+              <button>格式化</button><button>压缩</button><button>折叠</button>
+              <span class="st">对象 · 3 个字段</span>
+            </div>
+<pre>{
+  <span class="k">"list"</span>: [
+    { <span class="k">"id"</span>: <span class="n">1001</span>, <span class="k">"name"</span>: <span class="s">"深空灰保温杯"</span> },
+    { <span class="k">"id"</span>: <span class="n">1002</span>, <span class="k">"name"</span>: <span class="s">"折叠雨伞"</span> }
+  ],
+  <span class="k">"total"</span>: <span class="n">48</span>,
+  <span class="k">"page"</span>: <span class="n">1</span>
+}</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+function toggle(id){
+  const el=document.getElementById(id);
+  const open=el.style.display==='block';
+  document.querySelectorAll('.pop').forEach(p=>p.style.display='none');
+  el.style.display=open?'none':'block';
+}
+document.addEventListener('click',e=>{
+  if(!e.target.closest('.pop')&&!e.target.closest('.sel'))
+    document.querySelectorAll('.pop').forEach(p=>p.style.display='none');
+});
+function setScen(name,btn){
+  document.getElementById('curScen').textContent=name;
+  document.querySelectorAll('#scenPop button').forEach(b=>{
+    b.classList.remove('on'); const c=b.querySelector('.ck'); if(c)c.textContent='';
+  });
+  btn.classList.add('on'); btn.querySelector('.ck').textContent='✓';
+  // 切换场景后是纯净状态，「已修改」标记消失
+  document.getElementById('dirty').style.display='none';
+  document.querySelectorAll('.sel .dot').forEach(d=>d.style.background='var(--ok)');
+  document.getElementById('scenPop').style.display='none';
+}
+function pickProj(el,name){
+  document.querySelectorAll('.proj').forEach(p=>p.classList.remove('on'));
+  el.classList.add('on');
+  document.getElementById('curProj').textContent=name;
+  document.getElementById('mainTitle').textContent=name;
+}
+function pickRule(el){
+  document.querySelectorAll('.rule').forEach(r=>r.classList.remove('on'));
+  el.classList.add('on');
+}
+</script>
+</body>
+</html>
