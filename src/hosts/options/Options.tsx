@@ -9,7 +9,10 @@ import { useMemo, useState } from 'react';
 import { findShadowedRules } from '@core/store/validate.js';
 import type { Rule, RuleDraft } from '@core/types.js';
 import { useStore } from '@ui/useStore.js';
+import { Splitter, useResizable } from '@ui/Splitter.js';
 import { RuleEditor } from './RuleEditor.js';
+
+const EDITOR_DEFAULT_WIDTH = 560;
 
 /**
  * 编辑态按 id 记录而非整个 rule 对象 —— 规则改动后要能拿到最新版本。
@@ -22,6 +25,12 @@ export function Options() {
   const [editing, setEditing] = useState<Editing>(null);
   const [notice, setNotice] = useState<{ text: string; bad?: boolean } | null>(null);
   const [keyword, setKeyword] = useState('');
+
+  const editorPane = useResizable({
+    storageKey: 'mockstudio.options.editorWidth',
+    defaultWidth: EDITOR_DEFAULT_WIDTH,
+    minWidth: 380,
+  });
 
   const shadowed = useMemo(
     () => (store ? findShadowedRules(store.rules) : new Map<string, string>()),
@@ -234,19 +243,26 @@ export function Options() {
       </div>
 
       {editing && (
-        <div style={{ width: 560, flexShrink: 0 }}>
-          <RuleEditor
-            key={editing.mode === 'edit' ? editing.ruleId : 'new'}
-            initial={
-              editing.mode === 'edit'
-                ? store.rules.find((r) => r.id === editing.ruleId)
-                : undefined
-            }
-            shellTemplates={store.shellTemplates}
-            onSave={save}
-            onClose={() => setEditing(null)}
+        <>
+          <Splitter
+            onResize={editorPane.setWidth}
+            onDragStateChange={editorPane.setDragging}
+            onReset={() => editorPane.setWidth(EDITOR_DEFAULT_WIDTH)}
           />
-        </div>
+          <div style={{ width: editorPane.width, flexShrink: 0, minWidth: 0 }}>
+            <RuleEditor
+              key={editing.mode === 'edit' ? editing.ruleId : 'new'}
+              initial={
+                editing.mode === 'edit'
+                  ? store.rules.find((r) => r.id === editing.ruleId)
+                  : undefined
+              }
+              shellTemplates={store.shellTemplates}
+              onSave={save}
+              onClose={() => setEditing(null)}
+            />
+          </div>
+        </>
       )}
     </div>
   );

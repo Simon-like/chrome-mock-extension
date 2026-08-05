@@ -20,9 +20,13 @@ import { DEVTOOLS_PORT_NAME } from '@shared/messages.js';
 import { clearCaptures, fetchCaptures } from '@shared/rpc.js';
 import type { Rule, RuleDraft } from '@core/types.js';
 import { useStore } from '@ui/useStore.js';
+import { Splitter, useResizable } from '@ui/Splitter.js';
 import { RuleEditor } from '../options/RuleEditor.js';
 
 const inspectedTabId = chrome.devtools.inspectedWindow.tabId;
+
+/** DevTools 面板通常比较窄，默认给小一点 */
+const SIDE_DEFAULT_WIDTH = 480;
 
 export function PanelApp() {
   const { store, run } = useStore();
@@ -32,6 +36,14 @@ export function PanelApp() {
   const [draft, setDraft] = useState<RuleDraft | null>(null);
   const [draftKey, setDraftKey] = useState(0);
   const [selected, setSelected] = useState<CapturedRequest | null>(null);
+
+  // 编辑器和详情面板共用一个宽度设置 —— 它们占的是同一块位置，
+  // 分开记的话来回切换会跳动
+  const sidePane = useResizable({
+    storageKey: 'mockstudio.devtools.sideWidth',
+    defaultWidth: SIDE_DEFAULT_WIDTH,
+    minWidth: 320,
+  });
 
   // 请求流量大且只在 F12 打开时需要 → 用 Port 长连而非一次性消息（05 §4.2）
   useEffect(() => {
@@ -140,8 +152,16 @@ export function PanelApp() {
         </div>
       </div>
 
+      {(draft || selected) && (
+        <Splitter
+          onResize={sidePane.setWidth}
+          onDragStateChange={sidePane.setDragging}
+          onReset={() => sidePane.setWidth(SIDE_DEFAULT_WIDTH)}
+        />
+      )}
+
       {draft ? (
-        <div style={{ width: 520, flexShrink: 0 }}>
+        <div style={{ width: sidePane.width, flexShrink: 0, minWidth: 0 }}>
           <RuleEditor
             key={draftKey}
             initialDraft={draft}
@@ -152,11 +172,13 @@ export function PanelApp() {
         </div>
       ) : (
         selected && (
-          <DetailPane
-            entry={selected}
-            onConvert={() => convertToMock(selected)}
-            onClose={() => setSelected(null)}
-          />
+          <div style={{ width: sidePane.width, flexShrink: 0, minWidth: 0 }}>
+            <DetailPane
+              entry={selected}
+              onConvert={() => convertToMock(selected)}
+              onClose={() => setSelected(null)}
+            />
+          </div>
         )
       )}
     </div>
@@ -308,8 +330,7 @@ function DetailPane({
   return (
     <div
       style={{
-        width: 420,
-        flexShrink: 0,
+        height: '100%',
         borderLeft: '1px solid var(--border)',
         padding: 12,
         overflowY: 'auto',

@@ -384,6 +384,38 @@ label {
   border-radius: 3px;
 }
 
+/* ── 拖拽分隔条 ────────────────────────────────────── */
+
+.splitter {
+  /* 视觉上是细线，但热区要够大才好点中 */
+  width: 9px;
+  margin: 0 -4px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  position: relative;
+  z-index: 5;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+.splitter__line {
+  width: 1px;
+  background: var(--border);
+  transition: background 0.12s, width 0.12s;
+}
+.splitter:hover .splitter__line,
+.splitter:focus-visible .splitter__line,
+.splitter--active .splitter__line {
+  width: 3px;
+  background: var(--accent);
+}
+.splitter:focus-visible {
+  outline: none;
+}
+
 /* ── 请求流列表（DevTools 面板） ─────────────────────── */
 
 .req-row {
