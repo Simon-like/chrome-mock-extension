@@ -110,6 +110,16 @@ export interface Group {
   name: string;
   /** 组开关：关掉则组内规则全部失效 */
   enabled: boolean;
+  /**
+   * 互斥组：同一时刻只允许一个互斥组处于启用状态。
+   *
+   * 这是「场景切换」的实现方式 —— 把「正常态 / 全空态 / 全错态」建成三个互斥组，
+   * 点一下就整体切换，不需要再引入独立的 Scenario 概念。
+   * 普通组（false）之间互不影响，可同时启用，用于按业务模块归拢规则。
+   */
+  exclusive: boolean;
+  /** UI 折叠状态。放在数据里是为了刷新后保持 */
+  collapsed?: boolean;
   defaultShellTemplateId: string | null;
 }
 

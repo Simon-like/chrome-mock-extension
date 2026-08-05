@@ -77,7 +77,7 @@ function heal(s: Record<string, unknown>): MockStore {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     enabled: typeof s.enabled === 'boolean' ? s.enabled : def.enabled,
     rules: Array.isArray(s.rules) ? (s.rules as MockStore['rules']) : [],
-    groups: Array.isArray(s.groups) ? (s.groups as MockStore['groups']) : [],
+    groups: healGroups(s.groups),
     shellTemplates: mergeShellTemplates(s.shellTemplates),
     settings: {
       captureEnabled:
@@ -97,6 +97,29 @@ function heal(s: Record<string, unknown>): MockStore {
         : [...def.settings.aiHostWhitelist],
     },
   };
+}
+
+/**
+ * 补齐分组字段。
+ *
+ * exclusive 是后加的字段，早期数据和别人导出的旧文件里都没有 ——
+ * 缺失时按 false（普通组）处理，是安全的默认值：
+ * 误判成互斥组会导致用户的组莫名互相关闭。
+ */
+function healGroups(raw: unknown): MockStore['groups'] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((g): g is Record<string, unknown> => !!g && typeof g === 'object')
+    .map((g) => ({
+      id: String(g.id ?? ''),
+      name: String(g.name ?? '未命名分组'),
+      enabled: typeof g.enabled === 'boolean' ? g.enabled : true,
+      exclusive: g.exclusive === true,
+      collapsed: g.collapsed === true,
+      defaultShellTemplateId:
+        typeof g.defaultShellTemplateId === 'string' ? g.defaultShellTemplateId : null,
+    }))
+    .filter((g) => g.id);
 }
 
 /**

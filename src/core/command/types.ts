@@ -13,7 +13,7 @@
  * 详见设计文档 05 §3.4。
  */
 
-import type { Rule, RuleDraft, Settings } from '../types.js';
+import type { Group, Rule, RuleDraft, Settings } from '../types.js';
 
 export type Command =
   // ── 规则 ──
@@ -23,6 +23,15 @@ export type Command =
   | { type: 'TOGGLE_RULE'; payload: { id: string; enabled: boolean } }
   | { type: 'REORDER_RULE'; payload: { id: string; toIndex: number } }
   | { type: 'DUPLICATE_RULE'; payload: { id: string } }
+  | { type: 'MOVE_RULE_TO_GROUP'; payload: { id: string; groupId: string | null; toIndex?: number } }
+  // ── 分组 ──
+  | { type: 'CREATE_GROUP'; payload: { name: string; exclusive?: boolean } }
+  | { type: 'UPDATE_GROUP'; payload: { id: string; patch: Partial<Omit<Group, 'id'>> } }
+  /** 删除分组。组内规则不删除，移到未分组 */
+  | { type: 'DELETE_GROUP'; payload: { id: string } }
+  /** 启用互斥组时会自动关闭其他互斥组 —— 这就是场景切换 */
+  | { type: 'TOGGLE_GROUP'; payload: { id: string; enabled: boolean } }
+  | { type: 'REORDER_GROUP'; payload: { id: string; toIndex: number } }
   // ── 全局 ──
   | { type: 'SET_GLOBAL_ENABLED'; payload: { enabled: boolean } }
   | { type: 'UPDATE_SETTINGS'; payload: { patch: Partial<Settings> } }

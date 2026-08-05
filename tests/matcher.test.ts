@@ -185,7 +185,9 @@ describe('findMatchingRule', () => {
     const rule = makeRule({ groupId: 'g1', match: { urlMode: 'contains', url: '/api', methods: [], hosts: [] } });
     const store: MockStore = {
       ...storeWith([rule]),
-      groups: [{ id: 'g1', name: '组', enabled: false, defaultShellTemplateId: null }],
+      groups: [
+        { id: 'g1', name: '组', enabled: false, exclusive: false, defaultShellTemplateId: null },
+      ],
     };
     expect(findMatchingRule(store, req('https://a.com/api/x'))).toBeNull();
   });

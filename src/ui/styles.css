@@ -384,6 +384,150 @@ label {
   border-radius: 3px;
 }
 
+/* ── 分组 ─────────────────────────────────────────── */
+
+.group-section {
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  transition: border-color 0.12s, background 0.12s;
+}
+.group-section--off {
+  background: var(--surface);
+}
+.group-section--off .group-section__name {
+  color: var(--muted);
+}
+/* 拖拽悬停时整组高亮，明确告诉用户会放进哪里 */
+.group-section--drop {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.group-section__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.group-section__caret {
+  padding: 0;
+  width: 16px;
+  border: none;
+  background: transparent;
+  color: var(--faint);
+  font-size: 10px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.group-section__caret:hover {
+  background: transparent;
+  color: var(--fg);
+}
+.group-section__name {
+  font-weight: 600;
+  font-size: 12.5px;
+  cursor: default;
+}
+.group-section__body {
+  padding: 7px 8px 8px;
+}
+.group-section__empty {
+  padding: 14px;
+  text-align: center;
+  color: var(--faint);
+  font-size: 11px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+
+.tag-exclusive {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+/* 分组内的规则卡片降一级，视觉上从属于分组 */
+.group-section .rule-item {
+  border-color: transparent;
+  background: transparent;
+  margin-bottom: 2px;
+}
+.group-section .rule-item:hover {
+  background: var(--surface-hover);
+  border-color: transparent;
+}
+.group-section .rule-item.selected {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+/* ── 下拉菜单 ──────────────────────────────────────── */
+
+.group-section__menu {
+  position: relative;
+  flex-shrink: 0;
+}
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+.menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 50;
+  min-width: 180px;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
+}
+.menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 5px 9px;
+  font-size: 12px;
+}
+.menu button:hover {
+  background: var(--surface-hover);
+}
+.menu__sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+.menu__hint {
+  padding: 3px 9px 5px;
+  font-size: 10px;
+  color: var(--faint);
+  line-height: 1.4;
+}
+
+/* ── 拖拽中的规则 ──────────────────────────────────── */
+
+.rule-item--dragging {
+  opacity: 0.4;
+}
+.rule-item__grip {
+  cursor: grab;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1;
+  padding: 0 1px;
+  flex-shrink: 0;
+  user-select: none;
+}
+.rule-item__grip:active {
+  cursor: grabbing;
+}
+
 /* ── 拖拽分隔条 ────────────────────────────────────── */
 
 .splitter {

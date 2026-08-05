@@ -11,7 +11,7 @@
 
 import { materializeRule } from '../store/defaults.js';
 import { migrate } from '../store/migrate.js';
-import type { MockStore, Rule } from '../types.js';
+import type { Group, MockStore, Rule } from '../types.js';
 import type { Command, CommandResult } from './types.js';
 
 /** 副作用注入点：让 reducer 保持纯函数，同时测试可控 */
@@ -107,6 +107,107 @@ export function reduce(
       return { store: { ...store, rules }, result: { ok: true, createdId: copy.id } };
     }
 
+    case 'MOVE_RULE_TO_GROUP': {
+      const from = store.rules.findIndex((r) => r.id === cmd.payload.id);
+      if (from < 0) return notFound(store, cmd.payload.id);
+      if (cmd.payload.groupId && !store.groups.some((g) => g.id === cmd.payload.groupId)) {
+        return { store, result: { ok: false, error: '目标分组不存在' } };
+      }
+
+      const old = store.rules[from]!;
+      const moved: Rule = {
+        ...old,
+        groupId: cmd.payload.groupId,
+        meta: { ...old.meta, updatedAt: ctx.now() },
+      };
+
+      const rules = [...store.rules];
+      rules.splice(from, 1);
+      // toIndex 是在【移除后】数组里的目标位置
+      const to =
+        cmd.payload.toIndex === undefined
+          ? rules.length
+          : clamp(cmd.payload.toIndex, 0, rules.length);
+      rules.splice(to, 0, moved);
+      return { store: { ...store, rules }, result: { ok: true } };
+    }
+
+    case 'CREATE_GROUP': {
+      const name = cmd.payload.name.trim();
+      if (!name) return { store, result: { ok: false, error: '分组名不能为空' } };
+      const group: Group = {
+        id: ctx.idFactory(),
+        name,
+        enabled: true,
+        exclusive: cmd.payload.exclusive ?? false,
+        collapsed: false,
+        defaultShellTemplateId: null,
+      };
+      // 新建的互斥组默认启用，同样要遵守互斥规则
+      const groups = group.exclusive
+        ? [...closeOtherExclusive(store.groups, group.id), group]
+        : [...store.groups, group];
+      return { store: { ...store, groups }, result: { ok: true, createdId: group.id } };
+    }
+
+    case 'UPDATE_GROUP': {
+      const idx = store.groups.findIndex((g) => g.id === cmd.payload.id);
+      if (idx < 0) return { store, result: { ok: false, error: '分组不存在' } };
+      const old = store.groups[idx]!;
+      const next: Group = { ...old, ...cmd.payload.patch, id: old.id };
+
+      let groups = [...store.groups];
+      groups[idx] = next;
+      // 普通组改成互斥组时，若它是启用的，要把其他互斥组关掉
+      if (!old.exclusive && next.exclusive && next.enabled) {
+        groups = closeOtherExclusive(groups, next.id);
+      }
+      return { store: { ...store, groups }, result: { ok: true } };
+    }
+
+    case 'DELETE_GROUP': {
+      if (!store.groups.some((g) => g.id === cmd.payload.id)) {
+        return { store, result: { ok: false, error: '分组不存在' } };
+      }
+      return {
+        store: {
+          ...store,
+          groups: store.groups.filter((g) => g.id !== cmd.payload.id),
+          // 组内规则不删除，移到未分组 —— 删组不该顺带毁掉规则
+          rules: store.rules.map((r) =>
+            r.groupId === cmd.payload.id ? { ...r, groupId: null } : r,
+          ),
+        },
+        result: { ok: true },
+      };
+    }
+
+    case 'TOGGLE_GROUP': {
+      const idx = store.groups.findIndex((g) => g.id === cmd.payload.id);
+      if (idx < 0) return { store, result: { ok: false, error: '分组不存在' } };
+      const target = store.groups[idx]!;
+
+      let groups = [...store.groups];
+      groups[idx] = { ...target, enabled: cmd.payload.enabled };
+
+      // 场景切换的核心：启用一个互斥组，其余互斥组自动关闭
+      if (target.exclusive && cmd.payload.enabled) {
+        groups = closeOtherExclusive(groups, target.id);
+      }
+      return { store: { ...store, groups }, result: { ok: true } };
+    }
+
+    case 'REORDER_GROUP': {
+      const from = store.groups.findIndex((g) => g.id === cmd.payload.id);
+      if (from < 0) return { store, result: { ok: false, error: '分组不存在' } };
+      const to = clamp(cmd.payload.toIndex, 0, store.groups.length - 1);
+      if (from === to) return { store, result: { ok: true } };
+      const groups = [...store.groups];
+      const [moved] = groups.splice(from, 1);
+      groups.splice(to, 0, moved!);
+      return { store: { ...store, groups }, result: { ok: true } };
+    }
+
     case 'SET_GLOBAL_ENABLED':
       return {
         store: { ...store, enabled: cmd.payload.enabled },
@@ -172,6 +273,18 @@ function notFound(store: MockStore, id: string): ReduceOutcome {
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(Math.max(n, min), max);
+}
+
+/**
+ * 互斥组的核心规则：把除 keepId 之外的所有互斥组关掉。
+ *
+ * 抽成函数是因为有三个入口会触发它（切换组、新建互斥组、把普通组改成互斥组），
+ * 散落在各处容易漏掉其中一个。
+ */
+function closeOtherExclusive(groups: Group[], keepId: string): Group[] {
+  return groups.map((g) =>
+    g.exclusive && g.id !== keepId && g.enabled ? { ...g, enabled: false } : g,
+  );
 }
 
 function structuredCopy<T>(v: T): T {

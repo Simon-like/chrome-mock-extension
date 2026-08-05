@@ -11,6 +11,7 @@ import { validateRule } from '@core/store/validate.js';
 import { createRuleDraft } from '@core/store/defaults.js';
 import {
   HTTP_METHODS,
+  type Group,
   type HttpMethod,
   type Rule,
   type RuleDraft,
@@ -27,13 +28,22 @@ interface Props {
    * initialDraft 是「新建一条但字段已经填好了」。
    */
   initialDraft?: RuleDraft;
+  /** 可选：不传则不显示分组选择（DevTools 面板里用不上） */
+  groups?: Group[];
   shellTemplates: ShellTemplate[];
   /** 返回是否保存成功 */
   onSave: (draft: RuleDraft) => Promise<boolean> | boolean;
   onClose: () => void;
 }
 
-export function RuleEditor({ initial, initialDraft, shellTemplates, onSave, onClose }: Props) {
+export function RuleEditor({
+  initial,
+  initialDraft,
+  groups,
+  shellTemplates,
+  onSave,
+  onClose,
+}: Props) {
   const [draft, setDraft] = useState<RuleDraft>(
     () => initialDraft ?? (initial ? toDraft(initial) : createRuleDraft()),
   );
@@ -145,10 +155,40 @@ export function RuleEditor({ initial, initialDraft, shellTemplates, onSave, onCl
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: 16, minHeight: 0 }}>
-        <div style={{ marginBottom: 14 }}>
-          <label>规则名</label>
-          <input value={draft.name} onChange={(e) => patch({ name: e.target.value })} />
+        <div className="row" style={{ gap: 10, alignItems: 'flex-start', marginBottom: 14 }}>
+          <div className="grow">
+            <label>规则名</label>
+            <input value={draft.name} onChange={(e) => patch({ name: e.target.value })} />
+          </div>
+          {groups && groups.length > 0 && (
+            <div style={{ width: 150, flexShrink: 0 }}>
+              <label>所属分组</label>
+              <select
+                value={draft.groupId ?? ''}
+                onChange={(e) => patch({ groupId: e.target.value || null })}
+              >
+                <option value="">未分组</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                    {g.exclusive ? ' ⚡' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
+
+        {/* 规则挂在已停用的分组下时，会「看起来启用但实际不生效」—— 必须提示 */}
+        {(() => {
+          const g = groups?.find((x) => x.id === draft.groupId);
+          if (!g || g.enabled || !draft.enabled) return null;
+          return (
+            <div className="banner banner-warn" style={{ marginBottom: 14 }}>
+              所属分组「{g.name}」当前已停用，本规则不会生效
+            </div>
+          );
+        })()}
 
         <div style={{ marginBottom: 14 }}>
           <label>类型</label>
