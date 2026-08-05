@@ -187,6 +187,44 @@ input,select{font:inherit;color:inherit}
 .rule__acts button{padding:2px 6px;border-radius:4px;color:var(--faint);font-size:11px}
 .rule__acts button:hover{background:var(--line);color:var(--fg)}
 
+/* 变体切换器：规则行上最高频的操作，必须一步到位 */
+.vsel{
+  display:inline-flex;align-items:center;gap:4px;padding:1px 6px 1px 7px;
+  border-radius:99px;border:1px solid var(--line-2);background:var(--panel);
+  font-size:10.5px;color:var(--muted);flex-shrink:0;position:relative;
+}
+.vsel:hover{border-color:var(--accent-line);color:var(--accent)}
+.vsel .vc{font-size:8px;color:var(--faint)}
+.vsel .vn{font-weight:550}
+/* 非默认变体高亮 —— 一眼看出这条规则被切走了 */
+.vsel.alt{border-color:var(--warn);background:var(--warn-soft);color:var(--warn)}
+.vsel.alt .vc{color:var(--warn)}
+.vpop{
+  position:absolute;top:calc(100% + 5px);left:0;z-index:40;min-width:172px;padding:4px;
+  background:var(--panel);border:1px solid var(--line-2);border-radius:8px;
+  box-shadow:0 8px 24px rgba(0,0,0,.15);cursor:default;
+}
+.vpop button{
+  display:flex;align-items:center;gap:7px;width:100%;text-align:left;
+  padding:5px 8px;border-radius:5px;font-size:11.5px;color:var(--fg);
+}
+.vpop button:hover{background:var(--line)}
+.vpop button.on{color:var(--accent);font-weight:600}
+.vpop .vk{width:11px;font-size:10px}
+.vpop .vd{margin-left:auto;font-size:10px;color:var(--faint);font-weight:400}
+.vpop hr{border:none;border-top:1px solid var(--line);margin:4px 0}
+.vpop .add{color:var(--muted);font-size:11px}
+
+/* 编辑器里的变体标签页 */
+.vtabs{display:flex;align-items:center;gap:2px;margin-bottom:8px;flex-wrap:wrap}
+.vtab{
+  padding:3px 10px;border-radius:6px;font-size:11.5px;color:var(--muted);
+  border:1px solid transparent;
+}
+.vtab:hover{background:var(--line)}
+.vtab.on{background:var(--accent-soft);color:var(--accent);font-weight:600;border-color:var(--accent-line)}
+.vtab.add{color:var(--faint);font-size:13px;padding:3px 8px}
+
 .tag{font-size:9.5px;font-weight:650;padding:1px 6px;border-radius:4px;letter-spacing:.2px;flex-shrink:0}
 .tag--ov{background:var(--accent-soft);color:var(--accent)}
 .tag--vi{background:var(--warn-soft);color:var(--warn)}
@@ -274,7 +312,7 @@ input,select{font:inherit;color:inherit}
 
 <div class="note">
   <b>布局原型</b>
-  <span>点<code>场景</code>下拉看状态快照交互 · 点项目切换 · 点规则看编辑器 · 支持深浅色</span>
+  <span>点规则行的<code>变体</code>徽标可切换数据源 · 点项目切换 · 点规则看编辑器 · 支持深浅色</span>
   <span style="margin-left:auto">静态原型，非真实功能</span>
 </div>
 
@@ -293,25 +331,18 @@ input,select{font:inherit;color:inherit}
 
     <div class="selector" style="position:relative">
       <span>场景</span>
-      <button class="sel" onclick="toggle('scenPop')">
-        <span class="dot"></span>
-        <span id="curScen">全空态</span>
-        <span class="dirty" id="dirty">· 已修改</span>
+      <button class="sel" onclick="toggle('scenPop')" style="opacity:.55">
+        <span id="curScen">未使用</span>
         <span class="caret">▾</span>
       </button>
 
       <!-- 场景 = 状态快照，不是容器。所以它住在顶栏，不在列表里 -->
       <div class="pop" id="scenPop" style="display:none;left:38px">
-        <div class="pop__t">切换场景</div>
-        <button onclick="setScen('未使用场景',this)"><span class="ck"></span>未使用场景</button>
-        <button onclick="setScen('正常态',this)"><span class="ck"></span>正常态</button>
-        <button class="on" onclick="setScen('全空态',this)"><span class="ck">✓</span>全空态</button>
-        <button onclick="setScen('全错态',this)"><span class="ck"></span>全错态</button>
-        <button onclick="setScen('弱网测试',this)"><span class="ck"></span>弱网测试</button>
-        <hr>
-        <button>保存当前状态为新场景…</button>
-        <button>用当前状态更新「全空态」</button>
-        <div class="sub">场景记录「哪些规则处于启用」，一条规则可被多个场景引用</div>
+        <div class="pop__t">场景 · 下一轮实现</div>
+        <div class="sub" style="padding:6px 9px 9px">
+          场景 = 一份「每条规则各自选哪个<b>变体</b>、是否启用」的快照，用于批量切换。<br><br>
+          它建在变体之上 —— 先有变体，场景才立得住。所以本轮先做变体。
+        </div>
       </div>
     </div>
 
@@ -342,7 +373,7 @@ input,select{font:inherit;color:inherit}
         </button>
         <button class="proj" onclick="pickProj(this,'内部工具')">
           <div class="proj__row"><span class="proj__name">内部工具</span><span class="proj__n">5</span></div>
-          <div class="proj__host">未绑定域名</div>
+          <div class="proj__host">不限域名</div>
         </button>
 
         <div class="side__pager"><button>‹</button><span>1 / 2</span><button>›</button></div>
@@ -395,7 +426,7 @@ input,select{font:inherit;color:inherit}
             <span class="rule__grip">⠿</span>
             <input type="checkbox" class="rule__cb" checked onclick="event.stopPropagation()">
             <div class="rule__main">
-              <div class="rule__top"><span class="tag tag--ov">覆盖</span><span class="rule__name">商品列表</span></div>
+              <div class="rule__top"><span class="tag tag--ov">覆盖</span><span class="rule__name">商品列表</span><span class="vsel" onclick="toggleVar(event,this)"><span class="vn">正常</span><span class="vc">▾</span><div class="vpop" style="display:none"><button class="on" onclick="pickVar(event,this,'正常')"><span class="vk">✓</span>正常<span class="vd">20 条</span></button><button class="" onclick="pickVar(event,this,'空数据')"><span class="vk"></span>空数据<span class="vd">0 条</span></button><button class="" onclick="pickVar(event,this,'报错')"><span class="vk"></span>报错<span class="vd">500</span></button><button class="" onclick="pickVar(event,this,'超长列表')"><span class="vk"></span>超长列表<span class="vd">200 条</span></button><hr><button class="add">＋ 新增变体</button><button class="add">复制当前变体</button></div></span></div>
               <div class="rule__meta">/api/goods/list · POST · 200</div>
             </div>
             <div class="rule__right">
@@ -408,7 +439,7 @@ input,select{font:inherit;color:inherit}
             <span class="rule__grip">⠿</span>
             <input type="checkbox" class="rule__cb" checked onclick="event.stopPropagation()">
             <div class="rule__main">
-              <div class="rule__top"><span class="tag tag--ov">覆盖</span><span class="rule__name">商品详情</span></div>
+              <div class="rule__top"><span class="tag tag--ov">覆盖</span><span class="rule__name">商品详情</span><span class="vsel alt" onclick="toggleVar(event,this)"><span class="vn">已下架</span><span class="vc">▾</span><div class="vpop" style="display:none"><button class="" onclick="pickVar(event,this,'正常')"><span class="vk"></span>正常<span class="vd">200</span></button><button class="on" onclick="pickVar(event,this,'已下架')"><span class="vk">✓</span>已下架<span class="vd">200</span></button><button class="" onclick="pickVar(event,this,'404')"><span class="vk"></span>404<span class="vd">404</span></button><hr><button class="add">＋ 新增变体</button><button class="add">复制当前变体</button></div></span></div>
               <div class="rule__meta">/api/goods/detail · GET · 200 · 延迟 300ms</div>
             </div>
             <div class="rule__right">
@@ -421,7 +452,7 @@ input,select{font:inherit;color:inherit}
             <span class="rule__grip">⠿</span>
             <input type="checkbox" class="rule__cb" onclick="event.stopPropagation()">
             <div class="rule__main">
-              <div class="rule__top"><span class="tag tag--vi">虚拟</span><span class="rule__name">库存查询</span></div>
+              <div class="rule__top"><span class="tag tag--vi">虚拟</span><span class="rule__name">库存查询</span><span class="vsel" onclick="toggleVar(event,this)"><span class="vn">有货</span><span class="vc">▾</span><div class="vpop" style="display:none"><button class="on" onclick="pickVar(event,this,'有货')"><span class="vk">✓</span>有货<span class="vd">200</span></button><button class="" onclick="pickVar(event,this,'缺货')"><span class="vk"></span>缺货<span class="vd">200</span></button><hr><button class="add">＋ 新增变体</button><button class="add">复制当前变体</button></div></span></div>
               <div class="rule__meta">/api/stock/query · GET · 200</div>
             </div>
             <div class="rule__right">
@@ -444,7 +475,7 @@ input,select{font:inherit;color:inherit}
             <span class="rule__grip">⠿</span>
             <input type="checkbox" class="rule__cb" checked onclick="event.stopPropagation()">
             <div class="rule__main">
-              <div class="rule__top"><span class="tag tag--ov">覆盖</span><span class="rule__name">下单接口 · 500</span></div>
+              <div class="rule__top"><span class="tag tag--ov">覆盖</span><span class="rule__name">下单接口</span><span class="vsel alt" onclick="toggleVar(event,this)"><span class="vn">库存不足</span><span class="vc">▾</span><div class="vpop" style="display:none"><button class="" onclick="pickVar(event,this,'成功')"><span class="vk"></span>成功<span class="vd">200</span></button><button class="on" onclick="pickVar(event,this,'库存不足')"><span class="vk">✓</span>库存不足<span class="vd">500</span></button><button class="" onclick="pickVar(event,this,'超时')"><span class="vk"></span>超时<span class="vd">timeout</span></button><hr><button class="add">＋ 新增变体</button><button class="add">复制当前变体</button></div></span></div>
               <div class="rule__meta">/api/order/create · POST · 500</div>
             </div>
             <div class="rule__right">
@@ -457,7 +488,7 @@ input,select{font:inherit;color:inherit}
             <span class="rule__grip">⠿</span>
             <input type="checkbox" class="rule__cb" checked onclick="event.stopPropagation()">
             <div class="rule__main">
-              <div class="rule__top"><span class="tag tag--vi">虚拟</span><span class="rule__name">订单列表</span></div>
+              <div class="rule__top"><span class="tag tag--vi">虚拟</span><span class="rule__name">订单列表</span><span class="vsel" onclick="toggleVar(event,this)"><span class="vn">正常</span><span class="vc">▾</span><div class="vpop" style="display:none"><button class="on" onclick="pickVar(event,this,'正常')"><span class="vk">✓</span>正常<span class="vd">200</span></button><hr><button class="add">＋ 新增变体</button><button class="add">复制当前变体</button></div></span></div>
               <div class="rule__meta">/api/order/list · GET · 200</div>
               <!-- 诊断提示：这类「配了但不生效」必须显式暴露 -->
               <div class="hint">尚未命中过 —— 若预期已生效，请检查匹配条件</div>
@@ -490,7 +521,7 @@ input,select{font:inherit;color:inherit}
             <span class="rule__grip">⠿</span>
             <input type="checkbox" class="rule__cb" checked onclick="event.stopPropagation()">
             <div class="rule__main">
-              <div class="rule__top"><span class="tag tag--ov">覆盖</span><span class="rule__name">用户信息</span></div>
+              <div class="rule__top"><span class="tag tag--ov">覆盖</span><span class="rule__name">用户信息</span><span class="vsel" onclick="toggleVar(event,this)"><span class="vn">普通用户</span><span class="vc">▾</span><div class="vpop" style="display:none"><button class="on" onclick="pickVar(event,this,'普通用户')"><span class="vk">✓</span>普通用户<span class="vd">200</span></button><button class="" onclick="pickVar(event,this,'管理员')"><span class="vk"></span>管理员<span class="vd">200</span></button><button class="" onclick="pickVar(event,this,'未登录')"><span class="vk"></span>未登录<span class="vd">401</span></button><hr><button class="add">＋ 新增变体</button><button class="add">复制当前变体</button></div></span></div>
               <div class="rule__meta">/api/user/info · GET · 200</div>
               <div class="hint warn">⚠ 本规则限定 a.com，与项目域名无交集，不会命中</div>
             </div>
@@ -509,7 +540,7 @@ input,select{font:inherit;color:inherit}
           <button class="on">1</button><button>2</button><button>3</button>
           <button>›</button>
         </div>
-        <select><option>20 / 页</option><option>50 / 页</option><option>100 / 页</option></select>
+        <select><option>15 / 页</option><option>30 / 页</option><option>50 / 页</option></select>
       </div>
     </div>
 
@@ -550,18 +581,31 @@ input,select{font:inherit;color:inherit}
           </div>
         </div>
 
+        <div class="fld"><label>响应外壳</label>
+          <select><option>项目默认 · status/message/data</option><option>不套壳</option></select>
+        </div>
+
+        <div class="fld">
+          <label>变体 —— 同一接口的多份响应，切换即换数据源</label>
+          <div class="vtabs">
+            <button class="vtab on">正常</button>
+            <button class="vtab">空数据</button>
+            <button class="vtab">报错</button>
+            <button class="vtab">超长列表</button>
+            <button class="vtab add" title="新增变体">＋</button>
+          </div>
+        </div>
+
         <div class="row2">
+          <div class="fld" style="width:120px"><label>变体名</label><input value="正常" /></div>
           <div class="fld" style="width:82px"><label>状态码</label><input value="200" /></div>
           <div class="fld" style="width:92px"><label>延迟 ms</label><input value="0" /></div>
-          <div class="fld grow"><label>响应外壳</label>
-            <select><option>项目默认 · status/message/data</option><option>不套壳</option></select>
-          </div>
         </div>
 
         <div class="fld">
           <label style="display:flex;justify-content:space-between">
             <span>响应数据</span>
-            <span style="color:var(--faint);font-weight:400">空数据 · 500 · 401 · 慢 3 秒</span>
+            <span style="color:var(--faint);font-weight:400">从预设新建变体：空数据 · 500 · 401</span>
           </label>
           <div class="code">
             <div class="code__bar">
@@ -594,6 +638,8 @@ function toggle(id){
 document.addEventListener('click',e=>{
   if(!e.target.closest('.pop')&&!e.target.closest('.sel'))
     document.querySelectorAll('.pop').forEach(p=>p.style.display='none');
+  if(!e.target.closest('.vsel'))
+    document.querySelectorAll('.vpop').forEach(p=>p.style.display='none');
 });
 function setScen(name,btn){
   document.getElementById('curScen').textContent=name;
@@ -611,6 +657,25 @@ function pickProj(el,name){
   el.classList.add('on');
   document.getElementById('curProj').textContent=name;
   document.getElementById('mainTitle').textContent=name;
+}
+function toggleVar(e,el){
+  e.stopPropagation();
+  const pop=el.querySelector('.vpop'); const open=pop.style.display==='block';
+  document.querySelectorAll('.vpop').forEach(p=>p.style.display='none');
+  pop.style.display=open?'none':'block';
+}
+function pickVar(e,btn,name){
+  e.stopPropagation();
+  const pop=btn.closest('.vpop'); const sel=pop.closest('.vsel');
+  pop.querySelectorAll('button').forEach(b=>{
+    b.classList.remove('on'); const k=b.querySelector('.vk'); if(k)k.textContent='';
+  });
+  btn.classList.add('on'); btn.querySelector('.vk').textContent='✓';
+  sel.querySelector('.vn').textContent=name;
+  // 第一个变体视为默认，切走了就高亮提示
+  const first=pop.querySelector('button');
+  sel.classList.toggle('alt', btn!==first);
+  pop.style.display='none';
 }
 function pickRule(el){
   document.querySelectorAll('.rule').forEach(r=>r.classList.remove('on'));
