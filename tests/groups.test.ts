@@ -105,11 +105,41 @@ describe('域名作用域', () => {
     expect(matchHostScope([], scope, 'dev.jd.com')).toBe(true);
   });
 
-  it('支持 *.example.com 通配', () => {
-    const scope = { mode: 'include' as const, patterns: ['*.jd.com'] };
-    expect(matchHostScope([], scope, 'a.jd.com')).toBe(true);
-    expect(matchHostScope([], scope, 'jd.com')).toBe(true);
-    expect(matchHostScope([], scope, 'jd.com.evil.net')).toBe(false);
+  it('支持 *.example.com 通配，同时也命中裸域', () => {
+    const scope = { mode: 'include' as const, patterns: ['*.jdpay.com'] };
+    expect(matchHostScope([], scope, 'a.jdpay.com')).toBe(true);
+    expect(matchHostScope([], scope, 'dev.a.jdpay.com')).toBe(true);
+    expect(matchHostScope([], scope, 'jdpay.com')).toBe(true);
+    expect(matchHostScope([], scope, 'jdpay.com.evil.net')).toBe(false);
+    expect(matchHostScope([], scope, 'notjdpay.com')).toBe(false);
+  });
+
+  it('* 可出现在任意位置，且不跨越点号', () => {
+    const s1 = { mode: 'include' as const, patterns: ['*-test.jd.com'] };
+    expect(matchHostScope([], s1, 'pay-test.jd.com')).toBe(true);
+    expect(matchHostScope([], s1, 'prod.jd.com')).toBe(false);
+    // 不跨点：a.b-test 不该被 *-test 匹配上
+    expect(matchHostScope([], s1, 'a.b-test.jd.com')).toBe(false);
+
+    const s2 = { mode: 'include' as const, patterns: ['dev*.jdpay.com'] };
+    expect(matchHostScope([], s2, 'dev2.jdpay.com')).toBe(true);
+    expect(matchHostScope([], s2, 'dev.jdpay.com')).toBe(true);
+    expect(matchHostScope([], s2, 'prod.jdpay.com')).toBe(false);
+  });
+
+  it('单个 * 匹配所有域名', () => {
+    expect(matchHostScope([], { mode: 'include', patterns: ['*'] }, 'anything.com')).toBe(true);
+  });
+
+  it('大小写不敏感', () => {
+    const scope = { mode: 'include' as const, patterns: ['*.JDPay.com'] };
+    expect(matchHostScope([], scope, 'API.jdpay.COM')).toBe(true);
+  });
+
+  it('黑名单里的通配同样生效', () => {
+    const scope = { mode: 'exclude' as const, patterns: ['*.prod.jd.com'] };
+    expect(matchHostScope([], scope, 'a.prod.jd.com')).toBe(false);
+    expect(matchHostScope([], scope, 'a.dev.jd.com')).toBe(true);
   });
 
   it('规则自己的 hosts 非空时覆盖项目设置 —— 允许个别规则开例外', () => {
@@ -138,15 +168,31 @@ describe('域名作用域', () => {
 });
 
 describe('分组', () => {
-  it('组关闭时组内规则不参与匹配', () => {
+  it('TOGGLE_GROUP 是批量启用/停用组内规则，不是独立的组开关', () => {
     const ctx = makeCtx();
     let s = addGroup(createDefaultStore(), ctx, '商品').store;
     const gid = s.groups[0]!.id;
     s = addRule(s, ctx, '列表', '/api/goods', { groupId: gid }).store;
+    s = addRule(s, ctx, '详情', '/api/goods/detail', { groupId: gid }).store;
+    // 组外的规则不受影响
+    s = addRule(s, ctx, '其他', '/api/other').store;
 
-    expect(findMatchingRule(s, req('/api/goods/list'))).not.toBeNull();
     s = reduce(s, { type: 'TOGGLE_GROUP', payload: { id: gid, enabled: false } }, ctx).store;
+    expect(s.rules.filter((r) => r.groupId === gid).every((r) => !r.enabled)).toBe(true);
+    expect(s.rules.find((r) => r.name === '其他')!.enabled).toBe(true);
     expect(findMatchingRule(s, req('/api/goods/list'))).toBeNull();
+
+    s = reduce(s, { type: 'TOGGLE_GROUP', payload: { id: gid, enabled: true } }, ctx).store;
+    expect(s.rules.filter((r) => r.groupId === gid).every((r) => r.enabled)).toBe(true);
+  });
+
+  it('id 传 null 时批量控制「未分组」的规则', () => {
+    const ctx = makeCtx();
+    let s = addRule(createDefaultStore(), ctx, 'A', '/a').store;
+    s = addRule(s, ctx, 'B', '/b').store;
+
+    s = reduce(s, { type: 'TOGGLE_GROUP', payload: { id: null, enabled: false } }, ctx).store;
+    expect(s.rules.every((r) => !r.enabled)).toBe(true);
   });
 
   it('删除分组时组内规则移到未分组', () => {

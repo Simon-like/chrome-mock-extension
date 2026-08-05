@@ -31,8 +31,9 @@ export function Options() {
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ text: string; bad?: boolean } | null>(null);
   const [keyword, setKeyword] = useState('');
-  const [page, setPage] = useState(0);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  /** 「未分组」不是真实的 Group，没有 collapsed 字段可存，用本地状态 */
+  const [ungroupedCollapsed, setUngroupedCollapsed] = useState(false);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
 
   const editorPane = useResizable({
@@ -68,17 +69,6 @@ export function Options() {
       </div>
     );
   }
-
-  const pageSize = store.settings.pageSize;
-  const pageCount = Math.max(1, Math.ceil(searched.length / pageSize));
-  const safePage = Math.min(page, pageCount - 1);
-  /**
-   * 分页按「规则」切，跨分组连续排。
-   * 分组本身不分页 —— 它是标题不是条目，分页会把同组规则切断反而难用。
-   */
-  const pageRuleIds = new Set(
-    searched.slice(safePage * pageSize, (safePage + 1) * pageSize).map((r) => r.id),
-  );
 
   const flash = (text: string, bad = false) => {
     setNotice({ text, bad });
@@ -169,7 +159,6 @@ export function Options() {
   const virtualCount = scopedRules.filter((r) => r.enabled && r.kind === 'virtual').length;
 
   const renderRule = (rule: Rule) => {
-    if (!pageRuleIds.has(rule.id)) return null;
     const idx = store.rules.indexOf(rule);
     const shadowerId = shadowed.get(rule.id);
 
@@ -213,31 +202,33 @@ export function Options() {
   const renderGroup = (group: Group | null) => {
     const key = group?.id ?? '__ungrouped__';
     const rules = rulesOf(group?.id ?? null);
-    const shownCount = rules.filter((r) => pageRuleIds.has(r.id)).length;
 
-    // 未分组区没有内容时不渲染，避免空标题占地方
-    if (!group && shownCount === 0) return null;
+    // 未分组区没有规则时不渲染 —— 它是虚拟分区，空着只会占地方。
+    // 真实分组即使为空也要渲染，否则新建的分组会「消失」，用户以为没建成功
+    if (!group && rules.length === 0) return null;
 
     return (
       <GroupSection
         key={key}
         group={group}
         rules={rules}
-        shownCount={shownCount}
-        collapsed={group?.collapsed ?? false}
+        collapsed={group ? group.collapsed : ungroupedCollapsed}
         dropActive={dropTarget === key}
         onDragOver={(e) => allowDrop(e, key)}
         onDragLeave={() => setDropTarget((t) => (t === key ? null : t))}
         onDrop={(e) => handleDrop(e, group?.id ?? null)}
         onToggleCollapse={() => {
-          if (!group) return;
+          if (!group) {
+            setUngroupedCollapsed((v) => !v);
+            return;
+          }
           void run({
             type: 'UPDATE_GROUP',
             payload: { id: group.id, patch: { collapsed: !group.collapsed } },
           });
         }}
-        onToggleEnabled={(enabled) =>
-          group && void run({ type: 'TOGGLE_GROUP', payload: { id: group.id, enabled } })
+        onToggleAll={(enabled) =>
+          void run({ type: 'TOGGLE_GROUP', payload: { id: group?.id ?? null, enabled } })
         }
         onRename={(name) =>
           group && void run({ type: 'UPDATE_GROUP', payload: { id: group.id, patch: { name } } })
@@ -255,7 +246,6 @@ export function Options() {
         store={store}
         onSelect={(id) => {
           void run({ type: 'SET_ACTIVE_PROJECT', payload: { id } });
-          setPage(0);
           setEditing(null);
         }}
         onCreate={async () => {
@@ -316,10 +306,7 @@ export function Options() {
           <input
             placeholder="搜索规则名或 URL"
             value={keyword}
-            onChange={(e) => {
-              setKeyword(e.target.value);
-              setPage(0);
-            }}
+            onChange={(e) => setKeyword(e.target.value)}
             style={{ width: 190 }}
           />
           <span className="grow" />
@@ -338,6 +325,7 @@ export function Options() {
         )}
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '0 22px 18px', minHeight: 0 }}>
+          {/* 三种空状态要分清楚，否则会出现「建了分组却什么都不显示」的困惑 */}
           {scopedRules.length === 0 && groupsInScope.length === 0 ? (
             <div className="empty">
               {activeProject ? `「${activeProject.name}」还没有规则` : '还没有规则'}
@@ -346,7 +334,7 @@ export function Options() {
                 提示：在页面按 F12 打开 <strong>Mock</strong> 面板，可以把真实请求一键转成规则
               </span>
             </div>
-          ) : searched.length === 0 ? (
+          ) : keyword.trim() && searched.length === 0 ? (
             <div className="empty">没有匹配「{keyword}」的规则</div>
           ) : (
             <>
@@ -361,31 +349,6 @@ export function Options() {
             共 <b style={{ color: 'var(--fg)' }}>{scopedRules.length}</b> 条 · {activeCount} 条启用
             {virtualCount > 0 && ` · ${virtualCount} 个虚拟接口`}
           </span>
-          <span className="grow" />
-          {pageCount > 1 && (
-            <div className="pager">
-              <button disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>‹</button>
-              {Array.from({ length: pageCount }, (_, i) => (
-                <button key={i} className={i === safePage ? 'on' : ''} onClick={() => setPage(i)}>
-                  {i + 1}
-                </button>
-              ))}
-              <button disabled={safePage >= pageCount - 1} onClick={() => setPage(safePage + 1)}>›</button>
-            </div>
-          )}
-          <select
-            value={pageSize}
-            onChange={(e) =>
-              void run({
-                type: 'UPDATE_SETTINGS',
-                payload: { patch: { pageSize: Number(e.target.value) } },
-              })
-            }
-          >
-            <option value={15}>15 / 页</option>
-            <option value={30}>30 / 页</option>
-            <option value={50}>50 / 页</option>
-          </select>
         </div>
       </div>
 

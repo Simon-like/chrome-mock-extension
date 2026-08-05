@@ -68,14 +68,13 @@ export function findMatchingRule(
 
   if (!Array.isArray(store.rules)) return null;
 
-  const groupEnabled = buildGroupEnabledMap(store);
   const projects = buildProjectMap(store);
 
   for (let i = 0; i < store.rules.length; i++) {
     const rule = store.rules[i];
     if (!rule) continue;
+    // 分组没有独立开关 —— 停用一个分组就是把它里面的规则全部停用
     if (!rule.enabled) continue;
-    if (rule.groupId && groupEnabled.get(rule.groupId) === false) continue;
     if (!matchRule(rule, req, projects.get(rule.projectId ?? ''))) continue;
     return { rule, index: i };
   }
@@ -94,13 +93,6 @@ export function matchRule(rule: Rule, req: RequestInfo, project?: Project): bool
     matchMethod(m, req) &&
     matchUrl(m, req.url)
   );
-}
-
-function buildGroupEnabledMap(store: MockStore): Map<string, boolean> {
-  const map = new Map<string, boolean>();
-  if (!Array.isArray(store.groups)) return map;
-  for (const g of store.groups) map.set(g.id, g.enabled);
-  return map;
 }
 
 function buildProjectMap(store: MockStore): Map<string, Project> {
@@ -135,14 +127,50 @@ export function matchHost(hosts: string[], host: string): boolean {
   return hosts.some((h) => matchHostPattern(h, host));
 }
 
-/** 支持 *.example.com 形式的通配 */
+/**
+ * 域名匹配。三种写法：
+ *   jdpay.com     精确 + 自动含子域（api.jdpay.com 命中）
+ *   *.jdpay.com   通配子域，同时也命中裸域 jdpay.com
+ *   *-test.jd.com  * 可出现在任意位置，匹配除点号外的任意字符
+ *
+ * 最后一种用通配转正则实现，且 * 不跨越点号 —— 否则 *.jd.com
+ * 会把 evil.com/jd.com 之类的东西也匹配上。
+ */
 function matchHostPattern(pattern: string, host: string): boolean {
-  if (!pattern) return false;
-  if (pattern.startsWith('*.')) {
-    const base = pattern.slice(2);
-    return host === base || host.endsWith('.' + base);
+  const p = pattern.trim().toLowerCase();
+  const h = host.trim().toLowerCase();
+  if (!p) return false;
+
+  if (p === '*') return true;
+
+  // *.example.com：通配子域，同时也命中裸域
+  if (p.startsWith('*.') && !p.slice(2).includes('*')) {
+    const base = p.slice(2);
+    return h === base || h.endsWith('.' + base);
   }
-  return host === pattern || host.endsWith('.' + pattern);
+
+  if (p.includes('*')) {
+    const re = hostGlobToRegExp(p);
+    return re ? re.test(h) : false;
+  }
+
+  return h === p || h.endsWith('.' + p);
+}
+
+const hostGlobCache = new Map<string, RegExp | null>();
+
+function hostGlobToRegExp(pattern: string): RegExp | null {
+  let re = hostGlobCache.get(pattern);
+  if (re !== undefined) return re;
+  try {
+    // 先整体转义，再把 \* 换成「除点号外任意字符」—— 不跨段，避免误匹配
+    const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    re = new RegExp('^' + escaped.replace(/\\\*/g, '[^.]*') + '$');
+  } catch {
+    re = null;
+  }
+  hostGlobCache.set(pattern, re);
+  return re;
 }
 
 function matchMethod(m: MatchCondition, req: RequestInfo): boolean {

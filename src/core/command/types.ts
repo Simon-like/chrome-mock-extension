@@ -71,7 +71,8 @@ export type Command =
   | { type: 'UPDATE_GROUP'; payload: { id: string; patch: Partial<Omit<Group, 'id'>> } }
   /** 删除分组。组内规则不删除，移到未分组 */
   | { type: 'DELETE_GROUP'; payload: { id: string } }
-  | { type: 'TOGGLE_GROUP'; payload: { id: string; enabled: boolean } }
+  /** 批量启用/停用组内规则。id 传 null 表示「未分组」那一堆 */
+  | { type: 'TOGGLE_GROUP'; payload: { id: string | null; enabled: boolean } }
   | { type: 'REORDER_GROUP'; payload: { id: string; toIndex: number } }
   // ── 全局 ──
   | { type: 'SET_GLOBAL_ENABLED'; payload: { enabled: boolean } }

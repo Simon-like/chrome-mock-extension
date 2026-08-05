@@ -1,44 +1,84 @@
+/**
+ * 设计体系
+ *
+ * 三条视觉原则：
+ *   1. 层级靠留白与字重建立，不靠边框堆叠 —— 框套框会让层级更难看清
+ *   2. 玻璃质感只用在「浮层」（侧栏、弹层、下拉），内容区保持实底，
+ *      否则文字压在模糊背景上会降低可读性
+ *   3. 渐变克制：只出现在背景大面积区域和主操作按钮上
+ */
+
 :root {
   color-scheme: light dark;
 
-  --bg: #ffffff;
-  --bg-elevated: #ffffff;
-  --fg: #1f2328;
-  --muted: #6b7280;
-  --faint: #9ca3af;
-  --border: #e5e7eb;
-  --border-strong: #d1d5db;
-  --surface: #f6f7f9;
-  --surface-hover: #eef0f3;
+  /* 底层背景：一层极淡的冷色渐变，让大面积白不至于发死 */
+  --app-bg:
+    radial-gradient(1200px 600px at 12% -8%, rgba(99, 132, 255, 0.10), transparent 60%),
+    radial-gradient(900px 500px at 92% 4%, rgba(139, 108, 255, 0.08), transparent 58%),
+    linear-gradient(180deg, #fbfcfe 0%, #f6f7fa 100%);
 
-  --accent: #2563eb;
-  --accent-soft: rgba(37, 99, 235, 0.08);
-  --ok: #15803d;
-  --ok-soft: rgba(21, 128, 61, 0.1);
-  --warn: #b45309;
-  --warn-soft: rgba(180, 83, 9, 0.1);
-  --bad: #dc2626;
-  --bad-soft: rgba(220, 38, 38, 0.09);
+  /* 玻璃浮层 */
+  --glass: rgba(255, 255, 255, 0.62);
+  --glass-strong: rgba(255, 255, 255, 0.82);
+  --glass-border: rgba(255, 255, 255, 0.7);
+  --blur: saturate(180%) blur(18px);
 
-  --radius: 8px;
-  --radius-sm: 6px;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06);
+  --bg: transparent;
+  --bg-elevated: rgba(255, 255, 255, 0.86);
+  --fg: #14161c;
+  --muted: #626b7a;
+  --faint: #98a1b0;
+  --border: rgba(18, 22, 32, 0.07);
+  --border-strong: rgba(18, 22, 32, 0.14);
+  --surface: rgba(255, 255, 255, 0.5);
+  --surface-hover: rgba(18, 22, 32, 0.045);
+
+  --accent: #4361ee;
+  --accent-2: #7048e8;
+  --accent-grad: linear-gradient(135deg, #4361ee 0%, #7048e8 100%);
+  --accent-soft: rgba(67, 97, 238, 0.09);
+  --accent-line: rgba(67, 97, 238, 0.32);
+
+  --ok: #0f7b46;
+  --ok-soft: rgba(15, 123, 70, 0.10);
+  --warn: #a05a00;
+  --warn-soft: rgba(160, 90, 0, 0.11);
+  --bad: #cf2b3f;
+  --bad-soft: rgba(207, 43, 63, 0.09);
+
+  --radius: 10px;
+  --radius-sm: 7px;
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.05);
+  --shadow: 0 4px 16px rgba(16, 24, 40, 0.07), 0 1px 3px rgba(16, 24, 40, 0.05);
+  --shadow-lg: 0 18px 48px rgba(16, 24, 40, 0.16);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #14171c;
-    --bg-elevated: #1b1f26;
-    --fg: #e8eaed;
-    --muted: #9aa3af;
-    --faint: #6b7280;
-    --border: #2a2f38;
-    --border-strong: #3a414c;
-    --surface: #1b1f26;
-    --surface-hover: #232830;
+    --app-bg:
+      radial-gradient(1200px 600px at 10% -10%, rgba(88, 116, 255, 0.16), transparent 60%),
+      radial-gradient(900px 520px at 94% 2%, rgba(140, 92, 246, 0.13), transparent 58%),
+      linear-gradient(180deg, #0e1015 0%, #121520 100%);
 
-    --accent: #4b83f0;
-    --accent-soft: rgba(75, 131, 240, 0.14);
+    --glass: rgba(28, 32, 43, 0.55);
+    --glass-strong: rgba(30, 34, 46, 0.8);
+    --glass-border: rgba(255, 255, 255, 0.07);
+
+    --bg-elevated: rgba(28, 32, 42, 0.78);
+    --fg: #e9ecf3;
+    --muted: #9aa4b4;
+    --faint: #6b7484;
+    --border: rgba(255, 255, 255, 0.07);
+    --border-strong: rgba(255, 255, 255, 0.14);
+    --surface: rgba(255, 255, 255, 0.035);
+    --surface-hover: rgba(255, 255, 255, 0.07);
+
+    --accent: #7d97ff;
+    --accent-2: #a487ff;
+    --accent-grad: linear-gradient(135deg, #5b7cf7 0%, #8b5cf6 100%);
+    --accent-soft: rgba(125, 151, 255, 0.14);
+    --accent-line: rgba(125, 151, 255, 0.4);
+
     --ok: #4ade80;
     --ok-soft: rgba(74, 222, 128, 0.13);
     --warn: #fbbf24;
@@ -46,7 +86,9 @@
     --bad: #f87171;
     --bad-soft: rgba(248, 113, 113, 0.13);
 
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow: 0 4px 16px rgba(0, 0, 0, 0.34);
+    --shadow-lg: 0 20px 52px rgba(0, 0, 0, 0.5);
   }
 }
 
@@ -56,7 +98,9 @@
 
 body {
   margin: 0;
-  background: var(--bg);
+  min-height: 100vh;
+  background: var(--app-bg);
+  background-attachment: fixed;
   color: var(--fg);
   font: 13px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
     'Microsoft YaHei', sans-serif;
@@ -71,7 +115,9 @@ button {
   padding: 5px 11px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
-  background: var(--bg-elevated);
+  background: var(--glass-strong);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
   color: inherit;
   cursor: pointer;
   white-space: nowrap;
@@ -88,14 +134,15 @@ button:disabled {
   cursor: not-allowed;
 }
 button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-grad);
+  border-color: transparent;
   color: #fff;
   font-weight: 500;
+  box-shadow: 0 1px 2px rgba(67, 97, 238, 0.28);
 }
 button.primary:hover:not(:disabled) {
-  background: var(--accent);
-  opacity: 0.88;
+  background: var(--accent-grad);
+  filter: brightness(1.07);
 }
 button.danger {
   color: var(--bad);
@@ -285,22 +332,20 @@ label {
 /* ── 规则行 ───────────────────────────────────────── */
 
 .rule-item {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-elevated);
-  margin-bottom: 7px;
-  transition: border-color 0.12s, box-shadow 0.12s;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  margin-bottom: 1px;
+  transition: border-color 0.12s, background 0.12s;
 }
 .rule-item:hover {
-  border-color: var(--border-strong);
+  background: var(--surface-hover);
 }
 .rule-item.selected {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .rule-item.disabled {
-  background: var(--surface);
-  opacity: 0.62;
+  opacity: 0.5;
 }
 .rule-item__head {
   display: flex;
@@ -389,11 +434,14 @@ label {
 .side {
   width: 236px;
   flex-shrink: 0;
-  border-right: 1px solid var(--border);
+  border-right: 1px solid var(--glass-border);
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--surface);
+  /* 玻璃只用在浮层类区域，内容区保持实底以保证可读性 */
+  background: var(--glass);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
 }
 .side__search {
   padding: 11px 12px 8px;
@@ -602,6 +650,8 @@ label {
 .modal {
   position: fixed;
   z-index: 101;
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
@@ -609,10 +659,10 @@ label {
   max-height: 86vh;
   display: flex;
   flex-direction: column;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-strong);
-  border-radius: 11px;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.24);
+  background: var(--glass-strong);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
 }
 .modal__head {
   display: flex;
@@ -684,10 +734,12 @@ label {
   z-index: 40;
   min-width: 180px;
   padding: 4px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  background: var(--glass-strong);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
   cursor: default;
 }
 .vpop button {
@@ -836,56 +888,113 @@ label {
 
 /* ── 分组 ─────────────────────────────────────────── */
 
-.group-section {
-  margin-bottom: 10px;
-  border: 1px solid var(--border);
+.group {
+  margin-bottom: 14px;
   border-radius: var(--radius);
-  background: var(--bg-elevated);
-  transition: border-color 0.12s, background 0.12s;
-}
-.group-section--off {
-  background: var(--surface);
-}
-.group-section--off .group-section__name {
-  color: var(--muted);
+  border: 1px solid transparent;
+  transition: border-color 0.15s, background 0.15s;
 }
 /* 拖拽悬停时整组高亮，明确告诉用户会放进哪里 */
-.group-section--drop {
+.group--drop {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
+.group--off .group__name {
+  color: var(--faint);
+}
 
-.group-section__head {
+.group__head {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--border);
+  gap: 8px;
+  padding: 6px 8px 7px;
+  border-bottom: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  transition: background 0.12s;
 }
-.group-section__caret {
+.group__head:hover {
+  background: var(--surface-hover);
+}
+
+.group__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
   padding: 0;
-  width: 16px;
   border: none;
   background: transparent;
   color: var(--faint);
-  font-size: 10px;
-  line-height: 1;
+  border-radius: 5px;
   flex-shrink: 0;
 }
-.group-section__caret:hover {
-  background: transparent;
+.group__toggle:hover {
+  background: var(--surface-hover);
   color: var(--fg);
 }
-.group-section__name {
-  font-weight: 600;
+/* 展开时箭头朝下，折叠时朝右，用旋转过渡 */
+.group__caret {
+  transform: rotate(90deg);
+  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.group--collapsed .group__caret {
+  transform: rotate(0deg);
+}
+
+.group__name {
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.1px;
+  cursor: pointer;
+  user-select: none;
+}
+.group__rename {
+  max-width: 200px;
+  padding: 2px 7px;
   font-size: 12.5px;
-  cursor: default;
 }
-.group-section__body {
-  padding: 7px 8px 8px;
+.group__count {
+  font-size: 10.5px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
-.group-section__empty {
+/* 空白区也可点折叠 —— 只靠小箭头很难点中 */
+.group__spacer {
+  flex: 1;
+  align-self: stretch;
+  cursor: pointer;
+}
+
+/**
+ * 折叠动画：grid-template-rows 从 1fr 过渡到 0fr。
+ * 相比 max-height 的老办法，这个能过渡到内容的【自适应高度】，
+ * 不用猜一个够大的 max-height（猜大了动画会有停顿感，猜小了内容被截断）。
+ */
+.group__wrap {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.group--collapsed .group__wrap {
+  grid-template-rows: 0fr;
+}
+.group__body {
+  overflow: hidden;
+  min-height: 0;
+  padding: 7px 4px 2px;
+  transition: opacity 0.18s, padding 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.group--collapsed .group__body {
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.group__empty {
   padding: 14px;
+  margin: 0 4px;
   text-align: center;
   color: var(--faint);
   font-size: 11px;
@@ -893,24 +1002,25 @@ label {
   border-radius: var(--radius-sm);
 }
 
-.tag-exclusive {
-  background: var(--warn-soft);
-  color: var(--warn);
+.group__menu {
+  position: relative;
+  flex-shrink: 0;
 }
 
 /* 分组内的规则卡片降一级，视觉上从属于分组 */
-.group-section .rule-item {
+.group .rule-item {
   border-color: transparent;
   background: transparent;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
+  box-shadow: none;
 }
-.group-section .rule-item:hover {
+.group .rule-item:hover {
   background: var(--surface-hover);
   border-color: transparent;
 }
-.group-section .rule-item.selected {
+.group .rule-item.selected {
   background: var(--accent-soft);
-  border-color: var(--accent);
+  border-color: var(--accent-line);
 }
 
 /* ── 下拉菜单 ──────────────────────────────────────── */
@@ -931,10 +1041,12 @@ label {
   z-index: 50;
   min-width: 180px;
   padding: 4px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
+  background: var(--glass-strong);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
 }
 .menu button {
   display: block;

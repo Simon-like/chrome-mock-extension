@@ -206,7 +206,6 @@ function healGroups(raw: unknown): Group[] {
     .map((g) => ({
       id: String(g.id ?? ''),
       name: String(g.name ?? '未命名分组'),
-      enabled: bool(g.enabled, true),
       projectId: typeof g.projectId === 'string' ? g.projectId : null,
       collapsed: g.collapsed === true,
       defaultShellTemplateId:

@@ -165,8 +165,14 @@ export interface Project {
 export interface Group {
   id: string;
   name: string;
-  /** 组开关：关掉则组内规则全部失效 */
-  enabled: boolean;
+  /**
+   * 注意这里【没有】enabled 字段。
+   *
+   * 分组的启用状态是组内规则的聚合结果，不是一个独立开关 ——
+   * 否则会出现「组开着但规则全关」「组关着但规则全开」这类自相矛盾的状态，
+   * 用户也分不清自己点的是哪一层。UI 上的分组复选框是「批量启用/停用组内规则」，
+   * 三态显示（全开 / 全关 / 部分开）。
+   */
   /** 所属项目。null = 全局分组（不属于任何项目） */
   projectId: string | null;
   /** UI 折叠状态。放在数据里是为了刷新后保持 */

@@ -144,9 +144,12 @@ export function RuleEditor({
   });
 
   const title = initial ? '编辑规则' : initialDraft ? '从请求创建 Mock' : '新建规则';
-  const groupsOfProject = groups?.filter(
-    (g) => !draft.projectId || g.projectId === draft.projectId || g.projectId === null,
-  );
+  /**
+   * 只列当前项目下的分组。
+   * 之前的写法会把所有全局分组也列进来，导致下拉里出现别的项目的分组，
+   * 选了之后规则会被 MOVE_RULE 拽到那个项目去，很难排查。
+   */
+  const groupsOfProject = groups?.filter((g) => g.projectId === (draft.projectId ?? null));
 
   return (
     <div className="editor">
@@ -213,17 +216,6 @@ export function RuleEditor({
             )}
           </div>
         )}
-
-        {/* 规则挂在已停用分组下时会「看起来启用但不生效」—— 必须提示 */}
-        {(() => {
-          const g = groups?.find((x) => x.id === draft.groupId);
-          if (!g || g.enabled || !draft.enabled) return null;
-          return (
-            <div className="banner banner-warn" style={{ marginBottom: 13 }}>
-              所属分组「{g.name}」当前已停用，本规则不会生效
-            </div>
-          );
-        })()}
 
         <div style={{ marginBottom: 13 }}>
           <label>类型</label>

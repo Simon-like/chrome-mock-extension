@@ -181,20 +181,15 @@ describe('findMatchingRule', () => {
     expect(findMatchingRule(store, req('https://a.com/api/x', 'DELETE'))).not.toBeNull();
   });
 
-  it('分组禁用时组内规则失效', () => {
-    const rule = makeRule({ groupId: 'g1', match: { urlMode: 'contains', url: '/api', methods: [], hosts: [] } });
+  it('分组不再有独立开关 —— 停用分组等于停用组内规则', () => {
+    const rule = makeRule({
+      enabled: false,
+      groupId: 'g1',
+      match: { urlMode: 'contains', url: '/api', methods: [], hosts: [] },
+    });
     const store: MockStore = {
       ...storeWith([rule]),
-      groups: [
-        {
-          id: 'g1',
-          name: '组',
-          enabled: false,
-          projectId: null,
-          collapsed: false,
-          defaultShellTemplateId: null,
-        },
-      ],
+      groups: [{ id: 'g1', name: '组', projectId: null, collapsed: false, defaultShellTemplateId: null }],
     };
     expect(findMatchingRule(store, req('https://a.com/api/x'))).toBeNull();
   });

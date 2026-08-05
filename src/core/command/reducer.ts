@@ -294,7 +294,6 @@ export function reduce(
       const group: Group = {
         id: ctx.idFactory(),
         name,
-        enabled: true,
         projectId,
         collapsed: false,
         defaultShellTemplateId: null,
@@ -339,11 +338,24 @@ export function reduce(
     }
 
     case 'TOGGLE_GROUP': {
-      const idx = store.groups.findIndex((g) => g.id === cmd.payload.id);
-      if (idx < 0) return fail(store, '分组不存在');
-      const groups = [...store.groups];
-      groups[idx] = { ...groups[idx]!, enabled: cmd.payload.enabled };
-      return { store: { ...store, groups }, result: { ok: true } };
+      // 分组没有独立开关：这个命令是「批量启用/停用组内规则」。
+      // 用户的心智模型就是这个 —— 点分组前的复选框，组内规则全开或全关。
+      const target = cmd.payload.id;
+      if (target !== null && !store.groups.some((g) => g.id === target)) {
+        return fail(store, '分组不存在');
+      }
+      const now = ctx.now();
+      return {
+        store: {
+          ...store,
+          rules: store.rules.map((r) =>
+            r.groupId === target && r.enabled !== cmd.payload.enabled
+              ? { ...r, enabled: cmd.payload.enabled, meta: { ...r.meta, updatedAt: now } }
+              : r,
+          ),
+        },
+        result: { ok: true },
+      };
     }
 
     case 'REORDER_GROUP': {
