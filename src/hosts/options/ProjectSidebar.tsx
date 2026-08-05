@@ -133,16 +133,33 @@ function ProjectItem({
         <span className="proj__n">{count}</span>
         <span
           className="proj__gear"
+          role="button"
           title="项目设置"
           onClick={(e) => {
             e.stopPropagation();
             onSettings();
           }}
         >
-          ⚙
+          <GearIcon />
         </span>
       </div>
       <div className="proj__host" title={patterns.join(', ')}>{hostLabel}</div>
     </button>
+  );
+}
+
+/** 齿轮图标。用 SVG 而非 ⚙ 字符 —— emoji 在各系统下大小和基线都不一致，也调不了粗细 */
+export function GearIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} aria-hidden>
+      <circle cx="8" cy="8" r="2.2" fill="none" stroke="currentColor" strokeWidth="1.35" />
+      <path
+        d="M12.9 8c0-.3-.03-.58-.08-.86l1.2-.93-1.2-2.08-1.42.5a5 5 0 0 0-1.5-.87L9.7 2.2H7.3l-.2 1.56a5 5 0 0 0-1.5.87l-1.42-.5-1.2 2.08 1.2.93a5.2 5.2 0 0 0 0 1.72l-1.2.93 1.2 2.08 1.42-.5a5 5 0 0 0 1.5.87l.2 1.56h2.4l.2-1.56a5 5 0 0 0 1.5-.87l1.42.5 1.2-2.08-1.2-.93c.05-.28.08-.56.08-.86Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.35"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }

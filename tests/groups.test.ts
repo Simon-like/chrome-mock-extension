@@ -69,7 +69,7 @@ describe('项目', () => {
     expect(store.projects).toHaveLength(0);
   });
 
-  it('删除项目时其下分组与规则不删除，降级为全局/未归档', () => {
+  it('删除项目默认保留内容 —— 删错了还能找回来，删没了找不回来', () => {
     const ctx = makeCtx();
     let s = addProject(createDefaultStore(), ctx, '项目A').store;
     const pid = s.projects[0]!.id;
@@ -364,3 +364,67 @@ describe('响应外壳继承链', () => {
     expect(res.body).toBe('{}');
   });
 });
+
+describe('删除策略（cascade）', () => {
+  /** 建一个「项目 → 分组 → 规则」的完整结构 */
+  function nested() {
+    const ctx = makeCtx();
+    let s = addProject(createDefaultStore(), ctx, '项目A').store;
+    const pid = s.projects[0]!.id;
+    s = addGroup(s, ctx, '商品', pid).store;
+    const gid = s.groups[0]!.id;
+    s = addRule(s, ctx, '组内1', '/a', { groupId: gid, projectId: pid }).store;
+    s = addRule(s, ctx, '组内2', '/b', { groupId: gid, projectId: pid }).store;
+    s = addRule(s, ctx, '项目内未分组', '/c', { projectId: pid }).store;
+    s = addRule(s, ctx, '完全无关', '/d').store;
+    return { store: s, ctx, pid, gid };
+  }
+
+  it('删分组 · detach：规则移到未分组', () => {
+    const { store, ctx, gid } = nested();
+    const out = reduce(store, { type: 'DELETE_GROUP', payload: { id: gid, cascade: 'detach' } }, ctx);
+    expect(out.store.groups).toHaveLength(0);
+    expect(out.store.rules).toHaveLength(4);
+    expect(out.store.rules.filter((r) => r.groupId === null)).toHaveLength(4);
+  });
+
+  it('删分组 · cascade：组内规则一并删除，组外不受影响', () => {
+    const { store, ctx, gid } = nested();
+    const out = reduce(store, { type: 'DELETE_GROUP', payload: { id: gid, cascade: 'cascade' } }, ctx);
+    expect(out.store.groups).toHaveLength(0);
+    expect(out.store.rules.map((r) => r.name)).toEqual(['项目内未分组', '完全无关']);
+  });
+
+  it('删项目 · detach：分组与规则降级为全局/未归档', () => {
+    const { store, ctx, pid } = nested();
+    const out = reduce(store, { type: 'DELETE_PROJECT', payload: { id: pid, cascade: 'detach' } }, ctx);
+    expect(out.store.projects).toHaveLength(0);
+    expect(out.store.groups).toHaveLength(1);
+    expect(out.store.groups[0]!.projectId).toBeNull();
+    expect(out.store.rules).toHaveLength(4);
+    expect(out.store.rules.every((r) => r.projectId === null)).toBe(true);
+  });
+
+  it('删项目 · cascade：项目下的分组与规则全部删除', () => {
+    const { store, ctx, pid } = nested();
+    const out = reduce(store, { type: 'DELETE_PROJECT', payload: { id: pid, cascade: 'cascade' } }, ctx);
+    expect(out.store.projects).toHaveLength(0);
+    expect(out.store.groups).toHaveLength(0);
+    // 只剩项目外那条
+    expect(out.store.rules.map((r) => r.name)).toEqual(['完全无关']);
+  });
+
+  it('不传 cascade 时按 detach 处理 —— 保守的默认值', () => {
+    const { store, ctx, gid } = nested();
+    const out = reduce(store, { type: 'DELETE_GROUP', payload: { id: gid } }, ctx);
+    expect(out.store.rules).toHaveLength(4);
+  });
+
+  it('删项目时会清空 activeProjectId，避免指向已不存在的项目', () => {
+    const { store, ctx, pid } = nested();
+    expect(store.activeProjectId).toBe(pid);
+    const out = reduce(store, { type: 'DELETE_PROJECT', payload: { id: pid, cascade: 'cascade' } }, ctx);
+    expect(out.store.activeProjectId).toBeNull();
+  });
+});
+

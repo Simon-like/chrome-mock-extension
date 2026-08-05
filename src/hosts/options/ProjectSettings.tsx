@@ -20,7 +20,6 @@ export function ProjectSettings({ project, shellTemplates, onSave, onDelete, onC
   const [mode, setMode] = useState(project.hostScope.mode);
   const [patternsText, setPatternsText] = useState(project.hostScope.patterns.join('\n'));
   const [shellId, setShellId] = useState(project.defaultShellTemplateId ?? '');
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const patterns = patternsText
     .split('\n')
@@ -101,21 +100,9 @@ export function ProjectSettings({ project, shellTemplates, onSave, onDelete, onC
             </select>
           </div>
 
+          {/* 确认交给统一的 ConfirmDelete 弹层处理，那里能选内容是保留还是一并删除 */}
           <div className="modal__danger">
-            {confirmingDelete ? (
-              <div className="row" style={{ gap: 8 }}>
-                <span className="bad" style={{ fontSize: 11.5 }}>
-                  确认删除？其下分组与规则会移到「未归档」，不会被删除
-                </span>
-                <span className="grow" />
-                <button className="tiny" onClick={() => setConfirmingDelete(false)}>取消</button>
-                <button className="danger tiny" onClick={onDelete}>确认删除</button>
-              </div>
-            ) : (
-              <button className="danger tiny" onClick={() => setConfirmingDelete(true)}>
-                删除项目
-              </button>
-            )}
+            <button className="danger tiny" onClick={onDelete}>删除项目…</button>
           </div>
         </div>
 

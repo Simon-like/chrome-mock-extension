@@ -551,17 +551,25 @@ label {
   font-variant-numeric: tabular-nums;
 }
 .proj__gear {
-  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin: -3px -4px -3px 0;
+  border-radius: 6px;
   color: var(--faint);
   opacity: 0;
-  transition: opacity 0.12s;
-  padding: 0 2px;
+  transition: opacity 0.12s, background 0.12s, color 0.12s;
+  flex-shrink: 0;
 }
-.proj:hover .proj__gear {
+.proj:hover .proj__gear,
+.proj--on .proj__gear {
   opacity: 1;
 }
 .proj__gear:hover {
   color: var(--accent);
+  background: var(--surface-hover);
 }
 .proj__host {
   font-size: 10.5px;
@@ -639,6 +647,88 @@ label {
   font-size: 11px;
 }
 
+/* ── 图标按钮 ─────────────────────────────────────── */
+
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+.btn-icon:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--fg);
+}
+.btn-icon svg {
+  flex-shrink: 0;
+}
+
+/* ── 单选卡片（删除策略等） ─────────────────────────── */
+
+.choice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.choice__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-weight: 400;
+  color: var(--fg);
+  transition: border-color 0.12s, background 0.12s;
+}
+.choice__item:hover {
+  border-color: var(--accent-line);
+}
+.choice__item--on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.choice__item input {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.choice__item span {
+  display: block;
+  min-width: 0;
+}
+.choice__item b {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.choice__item b.bad {
+  color: var(--bad);
+}
+.choice__item em {
+  display: block;
+  font-style: normal;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+button.danger-solid {
+  background: linear-gradient(135deg, #e04256 0%, #c02236 100%);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(207, 43, 63, 0.3);
+}
+button.danger-solid:hover:not(:disabled) {
+  background: linear-gradient(135deg, #e04256 0%, #c02236 100%);
+  filter: brightness(1.07);
+}
+
 /* ── 弹层 ─────────────────────────────────────────── */
 
 .modal__backdrop {
@@ -682,6 +772,9 @@ label {
   gap: 8px;
   padding: 11px 16px;
   border-top: 1px solid var(--border);
+}
+.modal--sm {
+  width: min(400px, 90vw);
 }
 .modal__danger {
   margin-top: 18px;

@@ -63,14 +63,23 @@ export type Command =
   // ── 项目 ──
   | { type: 'CREATE_PROJECT'; payload: { name: string } }
   | { type: 'UPDATE_PROJECT'; payload: { id: string; patch: Partial<Omit<Project, 'id'>> } }
-  /** 删除项目。其下分组与规则不删除，降级为全局/未归档 */
-  | { type: 'DELETE_PROJECT'; payload: { id: string } }
+  /**
+   * 删除项目。cascade 决定其下的分组与规则怎么办：
+   *   'detach'（默认）—— 降级为全局分组 / 未归档规则，内容保留
+   *   'cascade'       —— 连同分组与规则一起删除
+   * 默认值刻意选保守的那个：删错了还能找回来，删没了找不回来。
+   */
+  | { type: 'DELETE_PROJECT'; payload: { id: string; cascade?: 'detach' | 'cascade' } }
   | { type: 'SET_ACTIVE_PROJECT'; payload: { id: string | null } }
   // ── 分组 ──
   | { type: 'CREATE_GROUP'; payload: { name: string; projectId?: string | null } }
   | { type: 'UPDATE_GROUP'; payload: { id: string; patch: Partial<Omit<Group, 'id'>> } }
-  /** 删除分组。组内规则不删除，移到未分组 */
-  | { type: 'DELETE_GROUP'; payload: { id: string } }
+  /**
+   * 删除分组。cascade 决定组内规则怎么办：
+   *   'detach'（默认）—— 移到「未分组」，规则保留
+   *   'cascade'       —— 连同规则一起删除
+   */
+  | { type: 'DELETE_GROUP'; payload: { id: string; cascade?: 'detach' | 'cascade' } }
   /** 批量启用/停用组内规则。id 传 null 表示「未分组」那一堆 */
   | { type: 'TOGGLE_GROUP'; payload: { id: string | null; enabled: boolean } }
   | { type: 'REORDER_GROUP'; payload: { id: string; toIndex: number } }

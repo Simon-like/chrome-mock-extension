@@ -17,7 +17,8 @@ import { Splitter, useResizable } from '@ui/Splitter.js';
 import { VariantSwitcher } from '@ui/VariantSwitcher.js';
 import { RuleEditor } from './RuleEditor.js';
 import { GroupSection } from './GroupSection.js';
-import { ProjectSidebar } from './ProjectSidebar.js';
+import { GearIcon, ProjectSidebar } from './ProjectSidebar.js';
+import { ConfirmDelete, type DeleteMode } from '@ui/ConfirmDelete.js';
 import { ProjectSettings } from './ProjectSettings.js';
 
 const EDITOR_DEFAULT_WIDTH = 560;
@@ -29,6 +30,10 @@ export function Options() {
   const { store, loading, error, run } = useStore();
   const [editing, setEditing] = useState<Editing>(null);
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
+  /** 待确认删除的对象。删容器是不可逆操作，必须让用户明确选内容怎么办 */
+  const [deleting, setDeleting] = useState<
+    { kind: 'group'; id: string } | { kind: 'project'; id: string } | null
+  >(null);
   const [notice, setNotice] = useState<{ text: string; bad?: boolean } | null>(null);
   const [keyword, setKeyword] = useState('');
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -233,7 +238,7 @@ export function Options() {
         onRename={(name) =>
           group && void run({ type: 'UPDATE_GROUP', payload: { id: group.id, patch: { name } } })
         }
-        onDelete={() => group && void run({ type: 'DELETE_GROUP', payload: { id: group.id } })}
+        onDelete={() => group && setDeleting({ kind: 'group', id: group.id })}
       >
         {rules.map(renderRule)}
       </GroupSection>
@@ -270,8 +275,9 @@ export function Options() {
             )}
             <span className="grow" />
             {activeProject && (
-              <button className="ghost" onClick={() => setSettingsFor(activeProject.id)}>
-                ⚙ 项目设置
+              <button className="btn-icon" onClick={() => setSettingsFor(activeProject.id)}>
+                <GearIcon size={15} />
+                项目设置
               </button>
             )}
             <button
@@ -393,10 +399,52 @@ export function Options() {
               shellTemplates={store.shellTemplates}
               onSave={(patch) => void run({ type: 'UPDATE_PROJECT', payload: { id: p.id, patch } })}
               onDelete={() => {
-                void run({ type: 'DELETE_PROJECT', payload: { id: p.id } });
                 setSettingsFor(null);
+                setDeleting({ kind: 'project', id: p.id });
               }}
               onClose={() => setSettingsFor(null)}
+            />
+          );
+        })()}
+
+      {deleting &&
+        (() => {
+          const isProject = deleting.kind === 'project';
+          const target = isProject
+            ? store.projects.find((x) => x.id === deleting.id)
+            : store.groups.find((x) => x.id === deleting.id);
+          if (!target) return null;
+
+          const affectedRules = isProject
+            ? store.rules.filter((r) => r.projectId === deleting.id)
+            : store.rules.filter((r) => r.groupId === deleting.id);
+          const affectedGroups = isProject
+            ? store.groups.filter((g) => g.projectId === deleting.id)
+            : [];
+
+          const confirm = (mode: DeleteMode) => {
+            void run(
+              isProject
+                ? { type: 'DELETE_PROJECT', payload: { id: deleting.id, cascade: mode } }
+                : { type: 'DELETE_GROUP', payload: { id: deleting.id, cascade: mode } },
+            );
+            setDeleting(null);
+            flash(
+              mode === 'cascade'
+                ? `已删除「${target.name}」及其内容`
+                : `已删除「${target.name}」，内容已保留`,
+            );
+          };
+
+          return (
+            <ConfirmDelete
+              title={isProject ? '删除项目' : '删除分组'}
+              name={target.name}
+              ruleCount={affectedRules.length}
+              groupCount={isProject ? affectedGroups.length : undefined}
+              detachLabel={isProject ? '未归档' : '未分组'}
+              onConfirm={confirm}
+              onCancel={() => setDeleting(null)}
             />
           );
         })()}

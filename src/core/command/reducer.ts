@@ -256,22 +256,34 @@ export function reduce(
     }
 
     case 'DELETE_PROJECT': {
-      if (!store.projects.some((p) => p.id === cmd.payload.id)) {
-        return fail(store, '项目不存在');
+      const pid = cmd.payload.id;
+      if (!store.projects.some((p) => p.id === pid)) return fail(store, '项目不存在');
+
+      const projects = store.projects.filter((p) => p.id !== pid);
+      const activeProjectId = store.activeProjectId === pid ? null : store.activeProjectId;
+
+      if (cmd.payload.cascade === 'cascade') {
+        return {
+          store: {
+            ...store,
+            projects,
+            groups: store.groups.filter((g) => g.projectId !== pid),
+            rules: store.rules.filter((r) => r.projectId !== pid),
+            activeProjectId,
+          },
+          result: { ok: true },
+        };
       }
-      // 项目下的分组与规则不删除，降级为全局/未归档 ——
-      // 删项目顺带毁掉几十条规则是很难挽回的操作
+
+      // 默认 detach：内容降级为全局分组 / 未归档规则。
+      // 删错项目还能找回来，删没了找不回来 —— 默认值该选保守的那个
       return {
         store: {
           ...store,
-          projects: store.projects.filter((p) => p.id !== cmd.payload.id),
-          groups: store.groups.map((g) =>
-            g.projectId === cmd.payload.id ? { ...g, projectId: null } : g,
-          ),
-          rules: store.rules.map((r) =>
-            r.projectId === cmd.payload.id ? { ...r, projectId: null } : r,
-          ),
-          activeProjectId: store.activeProjectId === cmd.payload.id ? null : store.activeProjectId,
+          projects,
+          groups: store.groups.map((g) => (g.projectId === pid ? { ...g, projectId: null } : g)),
+          rules: store.rules.map((r) => (r.projectId === pid ? { ...r, projectId: null } : r)),
+          activeProjectId,
         },
         result: { ok: true },
       };
@@ -323,15 +335,22 @@ export function reduce(
     }
 
     case 'DELETE_GROUP': {
-      if (!store.groups.some((g) => g.id === cmd.payload.id)) return fail(store, '分组不存在');
+      const gid = cmd.payload.id;
+      if (!store.groups.some((g) => g.id === gid)) return fail(store, '分组不存在');
+      const groups = store.groups.filter((g) => g.id !== gid);
+
+      if (cmd.payload.cascade === 'cascade') {
+        return {
+          store: { ...store, groups, rules: store.rules.filter((r) => r.groupId !== gid) },
+          result: { ok: true },
+        };
+      }
+
       return {
         store: {
           ...store,
-          groups: store.groups.filter((g) => g.id !== cmd.payload.id),
-          // 组内规则移到未分组，不删除
-          rules: store.rules.map((r) =>
-            r.groupId === cmd.payload.id ? { ...r, groupId: null } : r,
-          ),
+          groups,
+          rules: store.rules.map((r) => (r.groupId === gid ? { ...r, groupId: null } : r)),
         },
         result: { ok: true },
       };
