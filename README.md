@@ -261,13 +261,26 @@ observedCount + mockedCount > 0        // ✅ 正确
 ## 开发
 
 ```bash
+npm run dev            # 开发模式：UI 热更新 + 注入脚本自动重建
 npm run build          # 完整构建（类型检查 + 注入脚本 + 主构建）
 npm test               # 108 个单元测试
 npm run typecheck      # 只做类型检查
-npm run build:inject   # 只重建注入脚本
 ```
 
-改了 `src/hosts/inject/` 下的代码后：`npm run build` → `chrome://extensions` 点刷新 ↻ → **刷新页面**。
+**扩展只需加载一次。** Chrome 记住的是 `dist/` 这个目录，不是文件快照 ——
+之后改代码不用再点「加载已解压的扩展程序」。
+
+跑 `npm run dev` 之后：
+
+| 改动位置 | 需要的操作 |
+| --- | --- |
+| Popup / Options / DevTools 面板 / `src/ui/` | **什么都不用做**（HMR 热替换） |
+| `src/hosts/inject/`、`src/hosts/content/` | 刷新目标页面 |
+| `src/hosts/background/`、`manifest.config.ts` | `chrome://extensions` 点刷新 ↻ |
+
+一句话：**UI 改动零操作，页面脚本刷页面，后台脚本刷扩展。**
+
+完整说明见 [06 开发工作流](./docs/06-开发工作流.md)。
 
 ### 测试
 
@@ -327,6 +340,8 @@ npm run build:inject   # 只重建注入脚本
 | [03 知识扫盲](./docs/03-知识扫盲：Chrome插件核心概念.md) | Chrome 插件核心概念，零基础可读 |
 | [04 Spike 验证结论](./docs/04-Spike验证结论.md) | 真实站点上的可行性验证结果 |
 | [05 技术方案设计](./docs/05-技术方案设计.md) | 数据模型、分层、消息协议，**每个决策都讲了为什么** |
+| [06 开发工作流](./docs/06-开发工作流.md) | 热更新流程、各处 console 在哪看、构建管线为何这样设计 |
+| [07 下阶段规划](./docs/07-下阶段规划.md) | 优先级排序与技术债 |
 
 `spike/` 目录保留了最初的可行性验证代码，是一个不依赖任何构建工具的最小插件，
 适合对照 03 号文档理解 Chrome 插件的运行机制。

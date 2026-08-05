@@ -9,8 +9,12 @@ export default defineConfig({
   plugins: [
     react(),
     crx({ manifest }),
-    // 把单独打好的 IIFE 注入脚本补进 manifest（见该文件顶部注释）
-    injectContentScriptPlugin({ file: 'inject.js', matches: ['<all_urls>'] }),
+    // 把单独打好的 IIFE 注入脚本补进 manifest，并在 dev 下持续同步到 dist
+    injectContentScriptPlugin({
+      file: 'inject.js',
+      sourceFile: 'public/inject.js',
+      matches: ['<all_urls>'],
+    }),
   ],
   resolve: {
     alias: {

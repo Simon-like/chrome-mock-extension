@@ -5,7 +5,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npm run build:inject && vite",
+    "dev": "npm run build:inject && concurrently -n inject,vite -c yellow,cyan \"npm:dev:inject\" \"vite\"",
+    "dev:inject": "vite build --config vite.inject.config.ts --watch",
     "build": "tsc --noEmit && npm run build:inject && vite build",
     "build:inject": "vite build --config vite.inject.config.ts",
     "preview": "vite preview",
@@ -31,6 +32,7 @@
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^9.2.4",
     "happy-dom": "^20.11.1",
     "typescript": "^5.5.4",
     "vite": "^5.4.2",

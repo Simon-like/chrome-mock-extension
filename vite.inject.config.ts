@@ -26,8 +26,12 @@ export default defineConfig({
       '@shared': resolve(__dirname, 'src/shared'),
     },
   },
+  // outDir 就是 publicDir，不关掉 vite 会警告「public directory feature may not work correctly」
+  publicDir: false,
   build: {
-    // 输出到 public/，主构建会把它原样拷进 dist
+    // 输出到 public/，主构建会把它原样拷进 dist。
+    // dev 模式下 vite 只在启动时拷贝一次 public/，所以由
+    // build/injectContentScriptPlugin.ts 负责持续同步到 dist/。
     outDir: 'public',
     emptyOutDir: false,
     // 关掉 modulepreload polyfill 等注入，保持产物干净
