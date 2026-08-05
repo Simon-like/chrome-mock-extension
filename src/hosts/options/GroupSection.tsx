@@ -11,6 +11,8 @@ import type { Group, Rule } from '@core/types.js';
 interface Props {
   group: Group | null; // null 表示「未分组」这个虚拟分区
   rules: Rule[];
+  /** 本页实际展示了几条 —— 分页会把同组规则切开，要让用户知道 */
+  shownCount: number;
   collapsed: boolean;
   onToggleCollapse: () => void;
   onToggleEnabled: (enabled: boolean) => void;
@@ -27,6 +29,7 @@ interface Props {
 export function GroupSection({
   group,
   rules,
+  shownCount,
   collapsed,
   onToggleCollapse,
   onToggleEnabled,
@@ -107,7 +110,9 @@ export function GroupSection({
         )}
 
         <span className="faint" style={{ fontSize: 10.5, flexShrink: 0 }}>
-          {activeCount}/{rules.length}
+          {shownCount < rules.length
+            ? `本页 ${shownCount} / 共 ${rules.length}`
+            : `${activeCount} / ${rules.length}`}
         </span>
 
         <span className="grow" />
@@ -150,7 +155,7 @@ export function GroupSection({
 
       {!collapsed && (
         <div className="group-section__body">
-          {rules.length === 0 ? (
+          {shownCount === 0 && rules.length === 0 ? (
             <div className="group-section__empty">
               {dropActive ? '松开放入此分组' : '空分组 —— 把规则拖进来'}
             </div>

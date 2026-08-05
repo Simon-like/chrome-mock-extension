@@ -384,6 +384,261 @@ label {
   border-radius: 3px;
 }
 
+/* ── 项目侧栏 ──────────────────────────────────────── */
+
+.side {
+  width: 236px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface);
+}
+.side__search {
+  padding: 11px 12px 8px;
+}
+.side__scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px 12px;
+}
+.side__label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 6px 5px;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.side__label button {
+  padding: 1px 6px;
+  border: none;
+  background: transparent;
+  color: var(--faint);
+  font-size: 13px;
+  line-height: 1;
+  border-radius: 4px;
+}
+.side__label button:hover {
+  background: var(--surface-hover);
+  color: var(--fg);
+}
+.side__hint {
+  padding: 8px 7px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--faint);
+}
+.side__pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 7px 0 2px;
+  font-size: 11px;
+  color: var(--faint);
+}
+.side__pager button {
+  padding: 1px 6px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 4px;
+}
+.side__pager button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.proj {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 9px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  position: relative;
+  margin-bottom: 1px;
+}
+.proj:hover {
+  background: var(--surface-hover);
+}
+.proj--on {
+  background: var(--accent-soft);
+}
+/* 当前项目用左侧色条标识，比整块填充更克制 */
+.proj--on::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 2.5px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.proj__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.proj__name {
+  font-size: 12.5px;
+  font-weight: 500;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.proj--on .proj__name {
+  color: var(--accent);
+}
+.proj__n {
+  font-size: 10.5px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.proj__gear {
+  font-size: 11px;
+  color: var(--faint);
+  opacity: 0;
+  transition: opacity 0.12s;
+  padding: 0 2px;
+}
+.proj:hover .proj__gear {
+  opacity: 1;
+}
+.proj__gear:hover {
+  color: var(--accent);
+}
+.proj__host {
+  font-size: 10.5px;
+  color: var(--faint);
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ── 主区头部与底栏 ────────────────────────────────── */
+
+.main__head {
+  padding: 15px 22px 0;
+  flex-shrink: 0;
+}
+.main__head h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.3px;
+}
+.main__sub {
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--faint);
+}
+.chip {
+  font-size: 10.5px;
+  padding: 1.5px 7px;
+  border-radius: 99px;
+  background: var(--surface-hover);
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 22px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: var(--faint);
+}
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.pager button {
+  min-width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 5px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.pager button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--fg);
+}
+.pager button.on {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.foot select {
+  width: auto;
+  padding: 2px 5px;
+  font-size: 11px;
+}
+
+/* ── 弹层 ─────────────────────────────────────────── */
+
+.modal__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.32);
+}
+.modal {
+  position: fixed;
+  z-index: 101;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(460px, 90vw);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 11px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.24);
+}
+.modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.modal__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+.modal__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 11px 16px;
+  border-top: 1px solid var(--border);
+}
+.modal__danger {
+  margin-top: 18px;
+  padding-top: 13px;
+  border-top: 1px solid var(--border);
+}
+
 /* ── 变体切换器 ────────────────────────────────────── */
 
 .vsel {
