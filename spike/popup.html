@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>Mock Spike</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        width: 380px;
+        margin: 0;
+        padding: 14px;
+        font: 13px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+      }
+      h1 { font-size: 14px; margin: 0 0 4px; }
+      .sub { color: #888; font-size: 11px; margin-bottom: 12px; }
+      .row {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 6px 0; border-bottom: 1px solid rgba(128,128,128,.18);
+      }
+      .row:last-child { border-bottom: 0; }
+      .label { color: #666; }
+      .val { font-weight: 600; font-variant-numeric: tabular-nums; }
+      .ok { color: #16a34a; }
+      .bad { color: #dc2626; }
+      .warn { color: #d97706; }
+      .btns { display: flex; gap: 8px; margin: 12px 0; }
+      button {
+        flex: 1; padding: 7px 10px; font-size: 12px; cursor: pointer;
+        border: 1px solid rgba(128,128,128,.35); border-radius: 6px;
+        background: transparent; color: inherit;
+      }
+      button.primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+      button:hover { opacity: .85; }
+      pre {
+        margin: 8px 0 0; padding: 8px; max-height: 190px; overflow: auto;
+        background: rgba(128,128,128,.1); border-radius: 6px;
+        font-size: 11px; white-space: pre-wrap; word-break: break-all;
+      }
+      .section { margin-top: 14px; }
+      .section > h2 {
+        font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
+        color: #888; margin: 0 0 6px; font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Mock Spike · 可行性验证</h1>
+    <div class="sub">在你司业务站点上打开本弹窗，点「运行自检」</div>
+
+    <div class="btns">
+      <button id="run" class="primary">运行自检</button>
+      <button id="refresh">刷新统计</button>
+      <button id="clear">清空</button>
+    </div>
+
+    <div class="section">
+      <h2>结论</h2>
+      <div id="verdict">尚未运行</div>
+    </div>
+
+    <div class="section">
+      <h2>观测统计</h2>
+      <div class="row"><span class="label">注入时 readyState</span><span class="val" id="ready">—</span></div>
+      <div class="row"><span class="label">注入时已执行脚本数</span><span class="val" id="scripts">—</span></div>
+      <div class="row"><span class="label">拦截到 fetch</span><span class="val" id="nfetch">—</span></div>
+      <div class="row"><span class="label">拦截到 XHR</span><span class="val" id="nxhr">—</span></div>
+      <div class="row"><span class="label">Mock 命中</span><span class="val" id="nmock">—</span></div>
+      <div class="row"><span class="label">hook 位置</span><span class="val" id="hooked">—</span></div>
+    </div>
+
+    <div class="section">
+      <h2>详情</h2>
+      <pre id="out">—</pre>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

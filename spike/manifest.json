@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Mock Spike · 可行性验证",
+  "version": "0.0.1",
+  "description": "验证 MAIN world 注入能否在真实站点上 hook 到 fetch/XHR 并改掉响应",
+  "minimum_chrome_version": "111",
+
+  "permissions": ["storage", "scripting", "activeTab"],
+  "host_permissions": ["<all_urls>"],
+
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["injected.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED",
+      "all_frames": true
+    }
+  ],
+
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Mock Spike"
+  }
+}

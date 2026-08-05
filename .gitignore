@@ -1,0 +1,10 @@
+node_modules/
+dist/
+
+# 注入脚本的构建产物。由 npm run build:inject 生成，
+# 放在 public/ 只是为了让 vite 原样拷进 dist（见 vite.inject.config.ts）
+public/inject.js
+public/inject.js.map
+
+.DS_Store
+*.log

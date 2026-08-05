@@ -1,0 +1,39 @@
+{
+  "name": "mock-studio",
+  "version": "0.1.0",
+  "description": "AI 可编程的本地 Mock 运行时 —— Chrome 扩展",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npm run build:inject && vite",
+    "build": "tsc --noEmit && npm run build:inject && vite build",
+    "build:inject": "vite build --config vite.inject.config.ts",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/lint": "^6.9.7",
+    "@codemirror/state": "^6.7.1",
+    "@codemirror/view": "^6.43.7",
+    "codemirror": "^6.0.2",
+    "nanoid": "^5.0.7",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.0.0-beta.26",
+    "@types/chrome": "^0.0.268",
+    "@types/node": "^26.1.2",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "happy-dom": "^20.11.1",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.2",
+    "vitest": "^2.0.5"
+  }
+}
