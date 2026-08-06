@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>icon rasterizer</title></head>
+<body style="background:#1b1d22;color:#ddd;font:13px -apple-system,sans-serif;padding:20px">
+<p>把 icon.svg 光栅化成扩展需要的 PNG 尺寸。结果放在 <code>window.__ICONS__</code>。</p>
+<div id="out"></div>
+<script>
+const SIZES = [16, 32, 48, 128];
+window.__ICONS__ = null;
+
+fetch('./icon.svg')
+  .then((r) => r.text())
+  .then((svgText) => {
+    const blob = new Blob([svgText], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      const out = {};
+      for (const size of SIZES) {
+        const c = document.createElement('canvas');
+        c.width = c.height = size;
+        const ctx = c.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, size, size);
+        out[size] = c.toDataURL('image/png').split(',')[1];
+        c.style.cssText = 'margin:6px;vertical-align:middle;background:#fff2';
+        document.getElementById('out').appendChild(c);
+      }
+      window.__ICONS__ = out;
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  })
+  .catch((e) => {
+    window.__ICONS__ = { error: String(e) };
+  });
+</script>
+</body>
+</html>

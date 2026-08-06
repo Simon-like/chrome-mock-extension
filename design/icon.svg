@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!--
+    Mock Studio 图标
+
+    表意：一条请求从左边进来，在节点处被【截住并改道】——
+    原本的去向只剩虚线残影，新的去向是那道亮起的实线箭头。
+
+    形状按 16px 可读性设计：
+      - 只有一条主折线 + 一个节点，没有细碎装饰（小尺寸会糊成一团）
+      - 箭头与竖线之间留出空隙，否则缩小后会连成一个黑块
+      - 整体做视觉居中，而不是几何居中 —— 左侧实线视觉重量大于右侧虚线
+  -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4C6BF5" />
+      <stop offset="0.55" stop-color="#5B5BF0" />
+      <stop offset="1" stop-color="#8B4FE8" />
+    </linearGradient>
+    <!-- 顶部高光，让色块不至于发平 -->
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.24" />
+      <stop offset="0.5" stop-color="#fff" stop-opacity="0.05" />
+      <stop offset="1" stop-color="#fff" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+
+  <rect width="128" height="128" rx="30" fill="url(#bg)" />
+  <rect width="128" height="128" rx="30" fill="url(#gloss)" />
+
+  <g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round">
+    <!-- 被截断的原去向：只留两点残影，暗示「本来要去那边」 -->
+    <g stroke-opacity="0.34" stroke-width="10">
+      <path d="M78 78 h0" />
+      <path d="M100 78 h0" />
+    </g>
+
+    <!-- 请求进来 → 拐弯 → 向上改道 -->
+    <path d="M28 78 H58 V54" stroke-width="12" />
+    <!-- 箭头单独画，和竖线留出间距，缩小后不会连成块 -->
+    <path d="M42 50 L58 34 L74 50" stroke-width="12" />
+  </g>
+
+  <!-- 拦截点：实心圆挖空，比纯圆点更像「节点」 -->
+  <circle cx="58" cy="78" r="10" fill="#5560F2" stroke="#fff" stroke-width="8" />
+</svg>

@@ -41,9 +41,27 @@ export default defineManifest({
     },
   ],
 
+  /**
+   * 图标。四个尺寸都要给：
+   *   16 工具栏 · 32 Windows 高 DPI · 48 扩展管理页 · 128 商店与安装弹窗
+   * 源文件是 design/icon.svg，用 design/rasterize.html 光栅化。
+   */
+  icons: {
+    16: 'icons/icon-16.png',
+    32: 'icons/icon-32.png',
+    48: 'icons/icon-48.png',
+    128: 'icons/icon-128.png',
+  },
+
   action: {
     default_popup: 'src/hosts/popup/index.html',
     default_title: 'Mock Studio',
+    default_icon: {
+      16: 'icons/icon-16.png',
+      32: 'icons/icon-32.png',
+      48: 'icons/icon-48.png',
+      128: 'icons/icon-128.png',
+    },
   },
 
   options_page: 'src/hosts/options/index.html',
