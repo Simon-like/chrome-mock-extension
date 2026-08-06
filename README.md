@@ -92,11 +92,65 @@ F12 → Mock 面板 → 看到实时请求流
 
 ### 让 AI 帮你写规则
 
-把 [`skills/mock-rule-authoring/`](./skills/mock-rule-authoring/SKILL.md) 装进 Claude Code，然后直接说：
+项目自带一个 Claude Code Skill，装好之后可以直接用自然语言让 AI 生成规则。
 
-> 帮我 mock 一个商品列表接口，10 条数据带分页
+#### 1. 安装 Skill
 
-AI 生成 JSON 后，在规则管理页点 **「剪贴板导入」**。
+复制到 Claude Code 的 skills 目录，任选一种：
+
+```bash
+# 全局可用（所有项目）
+mkdir -p ~/.claude/skills && cp -r skills/mock-rule-authoring ~/.claude/skills/
+```
+
+```bash
+# 只在某个项目里可用 —— 在你的前端项目根目录执行
+mkdir -p .claude/skills && cp -r ~/path/to/chrome-mock-extension/skills/mock-rule-authoring .claude/skills/
+```
+
+装好后在 Claude Code 里输入 `/mock-rule-authoring` 应该能看到它。
+也可以不打斜杠命令 —— 说到「帮我 mock 一个接口」时它会自动触发。
+
+#### 2. 用自然语言描述
+
+```
+帮我 mock 一个商品列表接口 /api/goods/list，10 条数据带分页
+```
+
+```
+给 /api/order/detail 加三种状态：正常、订单不存在、服务端报错
+```
+
+```
+我要测空状态和加载态，帮 /api/message/list 造两个变体
+```
+
+把接口文档或前端的 TypeScript 类型直接贴给它，生成的字段会更贴合：
+
+```
+按这个类型给我造 10 条假数据：
+interface Goods { id: number; name: string; price: number; stock: number }
+```
+
+#### 3. 导入
+
+AI 会输出一段 JSON。复制它，然后在扩展的**规则管理页**点 **「剪贴板导入」**。
+
+> Skill 里写了完整的 Schema 约定，包括什么时候该生成多个变体、
+> `variants[0]` 为什么要放最常用的那份、空数据变体为什么要保持和正常变体
+> 一样的结构。详见 [`SKILL.md`](./skills/mock-rule-authoring/SKILL.md)。
+
+#### 导入的容错
+
+Skill 生成的 JSON 会经过结构自愈，以下非标准写法也能被接受：
+
+| AI 可能写成 | 自动处理 |
+| --- | --- |
+| `response` 而不是 `variants` | 包成单个「默认」变体 |
+| `body` 写成对象 | 转成字符串 |
+| 缺 `enabled` / `headers` / `delayMs` | 用默认值补齐 |
+
+所以即使 AI 记错了格式，多半也能导进去。
 
 ---
 
@@ -109,12 +163,26 @@ AI 生成 JSON 后，在规则管理页点 **「剪贴板导入」**。
 - 覆盖已有接口 / 新建虚拟接口两种类型
 - 单条开关 + 全局总开关 + `Alt+M` 快捷键
 
-**分组与场景**
+**变体 —— 同一接口的多份响应**
 
-- **普通分组**：按业务模块归拢规则，多个组可同时启用，整组一键开关
-- **互斥分组（场景）**：同一时刻只有一个生效 —— 把「正常态 / 全空态 / 全错态」
-  建成三个互斥组，点一下整体切换，当前场景常驻顶栏
-- 归组支持拖拽和下拉两种方式
+一条规则可以有多份响应，规则行上点一下就切换，不用改 body 也不用复制规则：
+
+```
+商品列表  /api/goods/list
+  ├── ● 正常      20 条数据
+  ├── ○ 空数据    list: []
+  ├── ○ 报错      500
+  └── ○ 超长列表  200 条
+```
+
+切到非默认变体时徽标会变橙色 —— 扫一眼列表就知道哪些接口被切走了。
+
+**项目与分组**
+
+- **项目**：按系统划分，**绑定域名**（白/黑名单，支持 `*.jdpay.com` 通配）
+- **分组**：业务模块归拢，可折叠；复选框是批量启用/停用组内规则，三态显示
+- 两层都可选 —— 不建项目也能直接用
+- 归组支持拖拽和下拉；支持批量选择后批量删除/启停/移动
 
 **响应构造**
 
@@ -132,6 +200,7 @@ AI 生成 JSON 后，在规则管理页点 **「剪贴板导入」**。
 **其他**
 
 - 面板宽度可拖拽调整（双击重置，方向键微调）
+- 删除项目/分组时可选择「保留内容」或「一并删除」
 - 规则导入 / 导出 JSON，剪贴板导入
 - 全部数据存本地，不联网
 
@@ -155,8 +224,11 @@ AI 生成 JSON 后，在规则管理页点 **「剪贴板导入」**。
 
 ### 尚未实现
 
-动态响应（JS 函数）· Mock.js 假数据生成 · 改请求头/请求体 ·
-录制模式 · HAR 导入 · MCP Server · GraphQL 按 operationName 匹配
+**动态响应（按参数生成数据）** ← 当前最大缺口 · Mock.js 假数据生成 ·
+场景（批量切换变体的快照）· 改请求头/请求体 · 录制模式 · HAR 导入 ·
+MCP Server · GraphQL 按 operationName 匹配
+
+优先级与技术前提见 [09 项目状态与交接](./docs/09-项目状态与交接.md#5-下一步)。
 
 ---
 
@@ -263,7 +335,7 @@ observedCount + mockedCount > 0        // ✅ 正确
 ```bash
 npm run dev            # 开发模式：UI 热更新 + 注入脚本自动重建
 npm run build          # 完整构建（类型检查 + 注入脚本 + 主构建）
-npm test               # 108 个单元测试
+npm test               # 156 个单元测试
 npm run typecheck      # 只做类型检查
 ```
 
@@ -287,9 +359,11 @@ npm run typecheck      # 只做类型检查
 | 文件 | 数量 | 覆盖 |
 | --- | --- | --- |
 | `tests/matcher.test.ts` | 31 | 三种匹配模式边界、ReDoS 防护、host / method 过滤 |
-| `tests/responder.test.ts` | 22 | 响应构造、外壳套用与识别、Capture 转换、版本迁移 |
-| `tests/reducer.test.ts` | 16 | 所有 Command 的行为与纯函数性 |
-| `tests/groups.test.ts` | 19 | 分组增删、互斥组三个触发入口、场景切换对匹配的影响 |
+| `tests/groups.test.ts` | 34 | 项目、分组、域名通配、批量操作、删除策略、外壳继承链 |
+| `tests/responder.test.ts` | 19 | 响应构造、外壳套用与识别、Capture-to-Mock 转换 |
+| `tests/reducer.test.ts` | 17 | 所有 Command 的行为与纯函数性 |
+| `tests/variants.test.ts` | 16 | **变体**：切换、增删、深拷贝、生效态回落 |
+| `tests/migrate.test.ts` | 19 | **v1→v2 迁移**与结构自愈 |
 | `tests/inject.test.ts` | 20 | **注入层**：fetch / XHR 拦截、fail-open、延迟、健壮性 |
 
 注入层测试跑在 happy-dom 里真实执行 hook 逻辑 —— 伪造 XHR 响应是全项目最容易写错的地方
@@ -341,7 +415,9 @@ npm run typecheck      # 只做类型检查
 | [04 Spike 验证结论](./docs/04-Spike验证结论.md) | 真实站点上的可行性验证结果 |
 | [05 技术方案设计](./docs/05-技术方案设计.md) | 数据模型、分层、消息协议，**每个决策都讲了为什么** |
 | [06 开发工作流](./docs/06-开发工作流.md) | 热更新流程、各处 console 在哪看、构建管线为何这样设计 |
-| [07 下阶段规划](./docs/07-下阶段规划.md) | 优先级排序与技术债 |
+| [07 下阶段规划](./docs/07-下阶段规划.md) | 优先级排序与技术债（部分内容已被 08、09 更新） |
+| [08 信息架构重构 PRD](./docs/08-信息架构重构PRD.md) | **项目 / 分组 / 变体的权威定义**，v1→v2 迁移方案 |
+| [**09 项目状态与交接**](./docs/09-项目状态与交接.md) | **当前进度、下一步、不能踩的坑** —— 接手先读这份 |
 
 `spike/` 目录保留了最初的可行性验证代码，是一个不依赖任何构建工具的最小插件，
 适合对照 03 号文档理解 Chrome 插件的运行机制。
