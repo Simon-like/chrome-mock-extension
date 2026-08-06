@@ -24,6 +24,17 @@ export type Command =
       };
     }
   | { type: 'DELETE_RULE'; payload: { id: string } }
+  /**
+   * 批量操作。刻意做成单条命令而不是循环 dispatch ——
+   * 后者会产生 N 次 storage 写入和 N 次广播，
+   * 中途 SW 被杀还会留下删了一半的状态。
+   */
+  | { type: 'DELETE_RULES'; payload: { ids: string[] } }
+  | { type: 'TOGGLE_RULES'; payload: { ids: string[]; enabled: boolean } }
+  | {
+      type: 'MOVE_RULES';
+      payload: { ids: string[]; projectId?: string | null; groupId?: string | null };
+    }
   | { type: 'TOGGLE_RULE'; payload: { id: string; enabled: boolean } }
   | { type: 'REORDER_RULE'; payload: { id: string; toIndex: number } }
   | { type: 'DUPLICATE_RULE'; payload: { id: string } }

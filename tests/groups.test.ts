@@ -428,3 +428,70 @@ describe('删除策略（cascade）', () => {
   });
 });
 
+describe('批量操作', () => {
+  function threeRules() {
+    const ctx = makeCtx();
+    let s = addGroup(createDefaultStore(), ctx, '商品').store;
+    const gid = s.groups[0]!.id;
+    s = addRule(s, ctx, 'A', '/a').store;
+    s = addRule(s, ctx, 'B', '/b').store;
+    s = addRule(s, ctx, 'C', '/c').store;
+    return { store: s, ctx, gid, ids: s.rules.map((r) => r.id) };
+  }
+
+  it('DELETE_RULES 一次删除多条', () => {
+    const { store, ctx, ids } = threeRules();
+    const out = reduce(store, { type: 'DELETE_RULES', payload: { ids: [ids[0]!, ids[2]!] } }, ctx);
+    expect(out.result.ok).toBe(true);
+    expect(out.store.rules.map((r) => r.name)).toEqual(['B']);
+  });
+
+  it('空选中时拒绝，避免误触发一次无意义的写入', () => {
+    const { store, ctx } = threeRules();
+    const out = reduce(store, { type: 'DELETE_RULES', payload: { ids: [] } }, ctx);
+    expect(out.result.ok).toBe(false);
+    expect(out.store).toBe(store);
+  });
+
+  it('全部 id 都不存在时拒绝', () => {
+    const { store, ctx } = threeRules();
+    const out = reduce(store, { type: 'DELETE_RULES', payload: { ids: ['x', 'y'] } }, ctx);
+    expect(out.result.ok).toBe(false);
+  });
+
+  it('TOGGLE_RULES 批量启停，未选中的不受影响', () => {
+    const { store, ctx, ids } = threeRules();
+    const out = reduce(
+      store,
+      { type: 'TOGGLE_RULES', payload: { ids: [ids[0]!, ids[1]!], enabled: false } },
+      ctx,
+    );
+    expect(out.store.rules[0]!.enabled).toBe(false);
+    expect(out.store.rules[1]!.enabled).toBe(false);
+    expect(out.store.rules[2]!.enabled).toBe(true);
+  });
+
+  it('MOVE_RULES 批量归组，项目跟随分组', () => {
+    const ctx = makeCtx();
+    let s = addProject(createDefaultStore(), ctx, '项目A').store;
+    const pid = s.projects[0]!.id;
+    s = addGroup(s, ctx, '商品', pid).store;
+    const gid = s.groups[0]!.id;
+    s = addRule(s, ctx, 'A', '/a').store;
+    s = addRule(s, ctx, 'B', '/b').store;
+    const ids = s.rules.map((r) => r.id);
+
+    const out = reduce(s, { type: 'MOVE_RULES', payload: { ids, groupId: gid } }, ctx);
+    expect(out.store.rules.every((r) => r.groupId === gid)).toBe(true);
+    // 与单条 MOVE_RULE 保持一致：项目跟随分组，避免归属自相矛盾
+    expect(out.store.rules.every((r) => r.projectId === pid)).toBe(true);
+  });
+
+  it('MOVE_RULES 目标分组不存在时拒绝', () => {
+    const { store, ctx, ids } = threeRules();
+    const out = reduce(store, { type: 'MOVE_RULES', payload: { ids, groupId: 'nope' } }, ctx);
+    expect(out.result.ok).toBe(false);
+    expect(out.store).toBe(store);
+  });
+});
+

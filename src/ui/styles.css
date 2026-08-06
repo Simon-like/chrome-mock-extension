@@ -199,8 +199,10 @@ textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
-input[type='checkbox'] {
+input[type='checkbox'],
+input[type='radio'] {
   width: auto;
+  flex-shrink: 0;
   accent-color: var(--accent);
   cursor: pointer;
 }
@@ -697,8 +699,9 @@ label {
   margin-top: 2px;
   flex-shrink: 0;
 }
-.choice__item span {
+.choice__item > span {
   display: block;
+  flex: 1;
   min-width: 0;
 }
 .choice__item b {
@@ -1163,6 +1166,35 @@ button.danger-solid:hover:not(:disabled) {
   font-size: 10px;
   color: var(--faint);
   line-height: 1.4;
+}
+
+/* ── 批量操作条 ────────────────────────────────────── */
+
+.bulkbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 22px 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  flex-wrap: wrap;
+}
+.bulkbar b {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 批量模式下选中的规则行 */
+.rule-item--checked {
+  background: var(--accent-soft) !important;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.rule-item__pick {
+  margin: 0 1px;
 }
 
 /* ── 拖拽中的规则 ──────────────────────────────────── */

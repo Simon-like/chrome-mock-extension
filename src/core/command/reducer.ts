@@ -53,6 +53,72 @@ export function reduce(
       };
     }
 
+    case 'DELETE_RULES': {
+      const ids = new Set(cmd.payload.ids);
+      if (ids.size === 0) return fail(store, '没有选中任何规则');
+      const rules = store.rules.filter((r) => !ids.has(r.id));
+      if (rules.length === store.rules.length) return fail(store, '选中的规则都不存在');
+      return { store: { ...store, rules }, result: { ok: true } };
+    }
+
+    case 'TOGGLE_RULES': {
+      const ids = new Set(cmd.payload.ids);
+      if (ids.size === 0) return fail(store, '没有选中任何规则');
+      const now = ctx.now();
+      return {
+        store: {
+          ...store,
+          rules: store.rules.map((r) =>
+            ids.has(r.id) && r.enabled !== cmd.payload.enabled
+              ? { ...r, enabled: cmd.payload.enabled, meta: { ...r.meta, updatedAt: now } }
+              : r,
+          ),
+        },
+        result: { ok: true },
+      };
+    }
+
+    case 'MOVE_RULES': {
+      const ids = new Set(cmd.payload.ids);
+      if (ids.size === 0) return fail(store, '没有选中任何规则');
+
+      const { projectId, groupId } = cmd.payload;
+      if (groupId && !store.groups.some((g) => g.id === groupId)) {
+        return fail(store, '目标分组不存在');
+      }
+      if (projectId && !store.projects.some((p) => p.id === projectId)) {
+        return fail(store, '目标项目不存在');
+      }
+
+      // 移进某分组时项目跟随该分组，与单条 MOVE_RULE 保持一致
+      const groupProject =
+        groupId !== undefined && groupId
+          ? (store.groups.find((g) => g.id === groupId)?.projectId ?? null)
+          : undefined;
+      const now = ctx.now();
+
+      return {
+        store: {
+          ...store,
+          rules: store.rules.map((r) => {
+            if (!ids.has(r.id)) return r;
+            return {
+              ...r,
+              groupId: groupId !== undefined ? groupId : r.groupId,
+              projectId:
+                groupProject !== undefined
+                  ? groupProject
+                  : projectId !== undefined
+                    ? projectId
+                    : r.projectId,
+              meta: { ...r.meta, updatedAt: now },
+            };
+          }),
+        },
+        result: { ok: true },
+      };
+    }
+
     case 'TOGGLE_RULE':
       return patchRule(store, cmd.payload.id, ctx, (old) => ({
         ...old,

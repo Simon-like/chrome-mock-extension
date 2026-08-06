@@ -32,7 +32,10 @@ export function Options() {
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
   /** 待确认删除的对象。删容器是不可逆操作，必须让用户明确选内容怎么办 */
   const [deleting, setDeleting] = useState<
-    { kind: 'group'; id: string } | { kind: 'project'; id: string } | null
+    | { kind: 'group'; id: string }
+    | { kind: 'project'; id: string }
+    | { kind: 'rules'; ids: string[] }
+    | null
   >(null);
   const [notice, setNotice] = useState<{ text: string; bad?: boolean } | null>(null);
   const [keyword, setKeyword] = useState('');
@@ -40,6 +43,12 @@ export function Options() {
   /** 「未分组」不是真实的 Group，没有 collapsed 字段可存，用本地状态 */
   const [ungroupedCollapsed, setUngroupedCollapsed] = useState(false);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  /**
+   * 批量选择。用独立的「模式」而不是常驻复选框 ——
+   * 规则行上已经有一个「启用」复选框了，再加一个会让人分不清点的是哪个。
+   * null 表示不在批量模式。
+   */
+  const [selection, setSelection] = useState<Set<string> | null>(null);
 
   const editorPane = useResizable({
     storageKey: 'mockstudio.options.editorWidth',
@@ -79,6 +88,23 @@ export function Options() {
     setNotice({ text, bad });
     setTimeout(() => setNotice(null), 3000);
   };
+
+  const inSelectMode = selection !== null;
+  const selectedIds = selection ? [...selection] : [];
+
+  const toggleSelect = (id: string) =>
+    setSelection((cur) => {
+      const next = new Set(cur ?? []);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  const selectMany = (ids: string[], on: boolean) =>
+    setSelection((cur) => {
+      const next = new Set(cur ?? []);
+      for (const id of ids) (on ? next.add(id) : next.delete(id));
+      return next;
+    });
 
   const activeProject = store.projects.find((p) => p.id === store.activeProjectId) ?? null;
   const groupsInScope = store.groups.filter((g) => g.projectId === store.activeProjectId);
@@ -176,6 +202,9 @@ export function Options() {
         groups={groupsInScope}
         shadowedBy={shadowerId ? store.rules.find((r) => r.id === shadowerId)?.name : undefined}
         selected={editing?.mode === 'edit' && editing.ruleId === rule.id}
+        selectMode={inSelectMode}
+        checked={selection?.has(rule.id) ?? false}
+        onCheck={() => toggleSelect(rule.id)}
         dragging={draggingId === rule.id}
         onDragStart={(e) => {
           e.dataTransfer.setData(DRAG_MIME, rule.id);
@@ -315,6 +344,14 @@ export function Options() {
             onChange={(e) => setKeyword(e.target.value)}
             style={{ width: 190 }}
           />
+          <button
+            className={inSelectMode ? 'primary' : ''}
+            onClick={() => setSelection(inSelectMode ? null : new Set())}
+            disabled={scopedRules.length === 0}
+            title="进入批量选择，可一次删除或移动多条规则"
+          >
+            {inSelectMode ? '退出批量' : '批量'}
+          </button>
           <span className="grow" />
           <button className="ghost" onClick={importFromClipboard} title="粘贴 AI 生成的规则 JSON">
             剪贴板导入
@@ -327,6 +364,79 @@ export function Options() {
         {notice && (
           <div style={{ padding: '0 22px 10px' }}>
             <div className={`banner ${notice.bad ? 'banner-bad' : 'banner-ok'}`}>{notice.text}</div>
+          </div>
+        )}
+
+        {/* 批量操作条。选中数为 0 时也显示，否则用户会以为批量模式没生效 */}
+        {inSelectMode && (
+          <div className="bulkbar">
+            <label className="row" style={{ gap: 6, margin: 0, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={selectedIds.length > 0 && selectedIds.length === searched.length}
+                ref={(el) => {
+                  if (el)
+                    el.indeterminate =
+                      selectedIds.length > 0 && selectedIds.length < searched.length;
+                }}
+                onChange={(e) => selectMany(searched.map((r) => r.id), e.target.checked)}
+              />
+              <span style={{ fontSize: 12 }}>
+                已选 <b>{selectedIds.length}</b> / {searched.length} 条
+              </span>
+            </label>
+
+            <span className="grow" />
+
+            <select
+              value=""
+              disabled={selectedIds.length === 0}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (!v) return;
+                void run({
+                  type: 'MOVE_RULES',
+                  payload: { ids: selectedIds, groupId: v === '__none__' ? null : v },
+                }).then((res) => {
+                  if (res.ok) {
+                    flash(`已移动 ${selectedIds.length} 条规则`);
+                    setSelection(new Set());
+                  }
+                });
+              }}
+              style={{ width: 'auto', minWidth: 120 }}
+            >
+              <option value="">移动到分组…</option>
+              <option value="__none__">未分组</option>
+              {groupsInScope.map((g) => (
+                <option key={g.id} value={g.id}>{g.name}</option>
+              ))}
+            </select>
+
+            <button
+              disabled={selectedIds.length === 0}
+              onClick={() =>
+                void run({ type: 'TOGGLE_RULES', payload: { ids: selectedIds, enabled: true } })
+              }
+            >
+              启用
+            </button>
+            <button
+              disabled={selectedIds.length === 0}
+              onClick={() =>
+                void run({ type: 'TOGGLE_RULES', payload: { ids: selectedIds, enabled: false } })
+              }
+            >
+              停用
+            </button>
+            <button
+              className="danger"
+              disabled={selectedIds.length === 0}
+              onClick={() => setDeleting({ kind: 'rules', ids: selectedIds })}
+            >
+              删除
+            </button>
+            <button className="ghost" onClick={() => setSelection(null)}>退出</button>
           </div>
         )}
 
@@ -407,7 +517,36 @@ export function Options() {
           );
         })()}
 
+      {deleting?.kind === 'rules' &&
+        (() => {
+          const ids = deleting.ids;
+          return (
+            <ConfirmDelete
+              title="删除规则"
+              name={
+                ids.length === 1
+                  ? (store.rules.find((r) => r.id === ids[0])?.name ?? '规则')
+                  : `${ids.length} 条规则`
+              }
+              ruleCount={0}
+              detachLabel=""
+              onConfirm={() => {
+                void run({ type: 'DELETE_RULES', payload: { ids } }).then((res) => {
+                  if (res.ok) {
+                    flash(`已删除 ${ids.length} 条规则`);
+                    setSelection(new Set());
+                    if (editing?.mode === 'edit' && ids.includes(editing.ruleId)) setEditing(null);
+                  }
+                });
+                setDeleting(null);
+              }}
+              onCancel={() => setDeleting(null)}
+            />
+          );
+        })()}
+
       {deleting &&
+        deleting.kind !== 'rules' &&
         (() => {
           const isProject = deleting.kind === 'project';
           const target = isProject
@@ -459,6 +598,9 @@ function RuleItem({
   groups,
   shadowedBy,
   selected,
+  selectMode,
+  checked,
+  onCheck,
   dragging,
   onDragStart,
   onDragEnd,
@@ -476,6 +618,9 @@ function RuleItem({
   groups: Group[];
   shadowedBy?: string;
   selected: boolean;
+  selectMode: boolean;
+  checked: boolean;
+  onCheck: () => void;
   dragging: boolean;
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
@@ -491,6 +636,7 @@ function RuleItem({
   const cls = [
     'rule-item',
     selected && 'selected',
+    checked && 'rule-item--checked',
     !rule.enabled && 'disabled',
     dragging && 'rule-item--dragging',
   ]
@@ -498,10 +644,34 @@ function RuleItem({
     .join(' ');
 
   return (
-    <div className={cls} onDoubleClick={onEdit} draggable onDragStart={onDragStart} onDragEnd={onDragEnd}>
+    <div
+      className={cls}
+      onDoubleClick={selectMode ? undefined : onEdit}
+      onClick={selectMode ? onCheck : undefined}
+      draggable={!selectMode}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+    >
       <div className="rule-item__head">
-        <span className="rule-item__grip" title="拖动可移到其他分组">⠿</span>
-        <input type="checkbox" checked={rule.enabled} onChange={(e) => onToggle(e.target.checked)} />
+        {selectMode ? (
+          <input
+            type="checkbox"
+            className="rule-item__pick"
+            checked={checked}
+            onChange={onCheck}
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <span className="rule-item__grip" title="拖动可移到其他分组">⠿</span>
+        )}
+        <input
+          type="checkbox"
+          checked={rule.enabled}
+          disabled={selectMode}
+          title={selectMode ? '批量模式下请用下方操作条' : '启用 / 停用'}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => onToggle(e.target.checked)}
+        />
         <span className={`tag tag-${rule.kind}`}>{rule.kind === 'virtual' ? '虚拟' : '覆盖'}</span>
         <span className="truncate" style={{ fontWeight: 500, maxWidth: '46%' }}>{rule.name}</span>
 
@@ -518,7 +688,7 @@ function RuleItem({
           {rule.meta.hitCount} 次
         </span>
 
-        <div className="rule-item__actions">
+        <div className="rule-item__actions" style={selectMode ? { display: 'none' } : undefined}>
           {groups.length > 0 && (
             <select
               value={rule.groupId ?? ''}
