@@ -23,6 +23,10 @@ get_request_detail(id)                       ← 要对齐真实数据结构时
 create_mock(...)                             ← 直接写进去
 ```
 
+要测多种状态就在 `create_mock` 里一次传 `variants`（正常/空数据/报错/超时），
+之后 `set_active_variant` 一键切 —— 别建多条规则再互相启停，那会互相遮蔽。
+给已有规则补一份响应用 `add_variant`（`update_mock` 是**覆盖**，会把原数据冲掉）。
+
 接入方式见 `docs/12-MCP-Server.md`。以下内容仅在**没有** MCP 时适用。
 
 ## 工作流程

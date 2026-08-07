@@ -11,6 +11,7 @@ import {
   REDACTED,
   hostAllowed,
   isSensitiveKey,
+  looksLikePii,
   looksLikeSecret,
   redactBody,
   redactCapture,
@@ -60,6 +61,58 @@ describe('looksLikeSecret', () => {
     for (const v of ['1001', 'hello', '2026-08-06', 'abc.def', 'a'.repeat(10)]) {
       expect(looksLikeSecret(v), v).toBe(false);
     }
+  });
+});
+
+/**
+ * PII 按**值的形状**识别，不按键名。
+ * 这组用例来自拿真实公司接口跑出来的漏网：登录接口返回的
+ * `nick` / `email` / `orgName` 全部原样出给了 AI。
+ */
+describe('looksLikePii', () => {
+  it('识别邮箱', () => {
+    expect(looksLikePii('lihan183@jd.com')).toBe(true);
+  });
+
+  it('识别中国大陆手机号', () => {
+    expect(looksLikePii('13800138000')).toBe(true);
+  });
+
+  it('识别身份证号', () => {
+    expect(looksLikePii('11010119900307821X')).toBe(true);
+  });
+
+  it('不误伤同样是 11 位数字的订单号 / 时间戳', () => {
+    // 刻意不做宽泛的「11 位数字」，否则业务 id 会被大面积打码
+    expect(looksLikePii('20260807142')).toBe(false);
+    expect(looksLikePii('98765432100')).toBe(false);
+  });
+
+  it('不误伤普通字符串', () => {
+    for (const v of ['王海', '融资技术研发部', 'PENDING', '/api/x']) {
+      expect(looksLikePii(v), v).toBe(false);
+    }
+  });
+});
+
+describe('PII 打码（真实接口回归）', () => {
+  it('邮箱不管挂在哪个字段名下都会被打掉', () => {
+    const out = redactValue({ email: 'a@b.com', contact: 'c@d.cn', nick: '王海' }) as any;
+    expect(out.email).toBe(REDACTED);
+    expect(out.contact).toBe(REDACTED); // 键名不敏感，但值是邮箱
+    expect(out.nick).toBe('王海'); // 姓名拦不住 —— 见文档里的已知限制
+  });
+
+  it('按值识别不会误伤布尔字段 —— 这是不把 mobile 加进键名表的理由', () => {
+    const out = redactValue({ isMobile: true, mobileUrl: '/m/index' }) as any;
+    expect(out.isMobile).toBe(true);
+    expect(out.mobileUrl).toBe('/m/index');
+  });
+
+  it('手机号被打掉，业务 id 不受影响', () => {
+    const out = redactValue({ mobile: '13800138000', orderId: '20260807142' }) as any;
+    expect(out.mobile).toBe(REDACTED);
+    expect(out.orderId).toBe('20260807142');
   });
 });
 

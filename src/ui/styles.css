@@ -1281,6 +1281,85 @@ button.danger-solid:hover:not(:disabled) {
   line-height: 1.4;
 }
 
+/* ── DevTools 请求详情（左右分栏）──────────────────────
+   之前是单栏竖排，响应体挤在最底下一个矮 pre 里，长响应根本没法看。
+   现在左边固定窄栏放元信息，右边整块留给响应体 ——
+   响应体拿到整个面板的高度，这是可读性提升最大的一步。 */
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  border-left: 1px solid var(--border);
+}
+.detail__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.detail__cols {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.detail__meta {
+  width: 190px;
+  flex-shrink: 0;
+  padding: 10px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+}
+.detail__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  gap: 6px;
+}
+.detail__bodyhead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+/* 编辑器要吃掉右栏剩下的全部高度 */
+.detail__body .json-editor {
+  flex: 1;
+  min-height: 0;
+}
+
+/* 面板很窄时（DevTools 停靠在侧边）两栏挤不下，退回竖排 */
+@media (max-width: 560px) {
+  .detail__cols {
+    flex-direction: column;
+  }
+  .detail__meta {
+    width: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    max-height: 40%;
+  }
+}
+
+/* 接入步骤这类「照着做」的说明，编号列表比一段话好跟 */
+.hintlist {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 10.5px;
+  line-height: 1.7;
+}
+.hintlist li {
+  margin-bottom: 3px;
+}
+.hintlist b {
+  color: var(--fg);
+}
+
 /* ── 响应体类型切换（静态 JSON / 动态 JS）────────────── */
 
 .bodytype {

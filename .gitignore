@@ -8,3 +8,7 @@ public/inject.js.map
 
 .DS_Store
 *.log
+
+# MCP 客户端配置：里面有配对码（等同于本机 mock 的访问口令），不能进版本库。
+# 配置模板在扩展设置页里点「复制整段」就有，不需要靠 git 分发。
+.mcp.json

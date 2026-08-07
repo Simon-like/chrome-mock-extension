@@ -39,7 +39,7 @@ function check(name, cond, detail = '') {
 function fakeExtension({ port, token, origin = 'chrome-extension://abcdefghijklmnop' }) {
   return new Promise((resolveConn, rejectConn) => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}`, { headers: { origin } });
-    const state = { store: makeStore(), captures: makeCaptures(), dispatched: [], ws };
+    const state = { store: makeStore(), captures: makeCaptures(), dispatched: [], seq: 0, pings: 0, ws };
 
     const timer = setTimeout(() => rejectConn(new Error('握手超时')), 4000);
 
@@ -47,9 +47,10 @@ function fakeExtension({ port, token, origin = 'chrome-extension://abcdefghijklm
       ws.send(
         JSON.stringify({
           type: 'HELLO',
-          protocolVersion: 1,
+          protocolVersion: 2,
+          role: 'extension',
           token,
-          extensionVersion: '0.1.0',
+          clientVersion: '0.1.0',
         }),
       );
     });
@@ -84,9 +85,26 @@ function fakeExtension({ port, token, origin = 'chrome-extension://abcdefghijklm
             kind: 'captureDetail',
             entry: state.captures.find((e) => e.id === msg.captureId) ?? null,
           });
-        case 'DISPATCH':
+        case 'DISPATCH': {
           state.dispatched.push(msg.command);
-          return reply({ kind: 'dispatch', result: { ok: true, createdId: 'new-rule-1' } });
+          // 真的落库，否则「建完再读一次 state」的冲突检测永远看不到新规则
+          let createdId;
+          if (msg.command.type === 'CREATE_RULE') {
+            const d = msg.command.payload.draft;
+            createdId = `new-rule-${++state.seq}`;
+            state.store.rules.push({
+              ...d,
+              id: createdId,
+              variants: d.variants.map((v, i) => ({ ...v, id: `${createdId}-v${i}` })),
+              activeVariantId: `${createdId}-v0`,
+              meta: { createdAt: 0, updatedAt: 0, source: 'manual', hitCount: 0, lastHitAt: null },
+            });
+          }
+          return reply({ kind: 'dispatch', result: { ok: true, createdId } });
+        }
+        case 'PING':
+          state.pings++;
+          return reply({ kind: 'pong' });
         default:
           return reply({ kind: 'pong' });
       }
@@ -98,6 +116,7 @@ function fakeExtension({ port, token, origin = 'chrome-extension://abcdefghijklm
     });
     ws.on('close', (code, reason) => {
       clearTimeout(timer);
+      state.closedCode = code;
       rejectConn(new Error(`连接被关闭 code=${code} reason=${String(reason)}`));
     });
   });
@@ -208,6 +227,7 @@ async function main() {
     'set_global_enabled',
     'toggle_mock',
     'update_mock',
+    'add_variant',
   ];
   const missing = expected.filter((n) => !names.includes(n));
   const extra = names.filter((n) => !expected.includes(n));
@@ -217,6 +237,29 @@ async function main() {
     `缺少 [${missing}] 多出 [${extra}]`,
   );
   check('每个工具都有描述 —— AI 靠它决定什么时候用', tools.every((t) => (t.description ?? '').length > 20));
+
+  // ── 让 AI「知道该用这套工具」的三层保险 ────────────
+  // 这三层就是「不用给每个 agent 装 skill」的依据，必须验证真的送到了客户端
+  const instr = client.getInstructions?.() ?? '';
+  check('instructions 送到了客户端（取代 skill 的那一层）', instr.length > 100, `长度 ${instr.length}`);
+  check(
+    'instructions 里写了触发词，而不只是工具清单',
+    instr.includes('页面没数据') && instr.includes('list_recent_requests'),
+  );
+  check('instructions 说明了脱敏边界', instr.includes('redacted'));
+
+  const { prompts } = await client.listPrompts();
+  const pnames = prompts.map((p) => p.name).sort();
+  check(
+    'prompts 已注册（不认 instructions 的客户端靠它兜底）',
+    pnames.join(',') === 'add_test_states,fix_missing_data,why_not_working',
+    pnames.join(','),
+  );
+  const got = await client.getPrompt({ name: 'fix_missing_data', arguments: {} });
+  check(
+    'prompt 展开成可直接执行的操作指引',
+    got.messages[0].content.text.includes('list_recent_requests'),
+  );
 
   // ── 未连接时的报错要能照着做 ────────────────────────
   const before = await client.callTool({ name: 'get_status', arguments: {} });
@@ -283,15 +326,143 @@ async function main() {
   });
   check('set_active_variant 可用', variant.content[0].text.includes('已切换变体'));
 
+  // ── 规则能力补全 ────────────────────────────────────
+  const multi = await client.callTool({
+    name: 'create_mock',
+    arguments: {
+      name: '订单详情',
+      url: '/api/order/detail',
+      methods: ['GET'],
+      hosts: ['shop.example.com'],
+      body: '{}',
+      variants: [
+        { name: '正常', body: '{"id":1}' },
+        { name: '空数据', body: '{"list":[]}' },
+        { name: '超时', body: '{}', behavior: 'timeout' },
+        { name: '报错', body: '{"msg":"err"}', status: 500, headers: { 'x-trace': 'abc' } },
+      ],
+    },
+  });
+  check('一次能建多个变体', multi.content[0].text.includes('4 个变体'));
+  const multiCmd = ext.dispatched.at(-1);
+  check('默认生效的是第一个变体', multiCmd?.payload.draft.activeVariantIndex === 0);
+  check(
+    'behavior 传达到规则（测超时/断网靠它）',
+    multiCmd?.payload.draft.variants[2].response.behavior === 'timeout',
+  );
+  check(
+    '自定义响应头传达到规则',
+    multiCmd?.payload.draft.variants[3].response.headers['x-trace'] === 'abc',
+  );
+
+  const av = await client.callTool({
+    name: 'add_variant',
+    arguments: { rule_id: 'rule-1', name: '慢 3 秒', body: '{}', delay_ms: 3000 },
+  });
+  check('add_variant 可以给已有规则追加变体', av.content[0].text.includes('慢 3 秒'));
+  check('add_variant 走的是 CREATE_VARIANT 命令', ext.dispatched.at(-1)?.type === 'CREATE_VARIANT');
+
+  // ── 冲突检测 ────────────────────────────────────────
+  const dup = await client.callTool({
+    name: 'create_mock',
+    arguments: {
+      name: '商品列表（重复）',
+      url: '/api/goods/list',
+      methods: ['GET'],
+      hosts: ['shop.example.com'],
+      body: '{}',
+    },
+  });
+  check('同 URL 重复建规则会被提示', dup.content[0].text.includes('已经有匹配同一 URL 的规则'));
+  check('并建议改用 update_mock', dup.content[0].text.includes('update_mock'));
+
+  const wide = await client.callTool({
+    name: 'create_mock',
+    arguments: { name: '没限定范围', url: '/api/anything', body: '{}' },
+  });
+  check('没限定方法/域名时给出提醒', wide.content[0].text.includes('没有限定'));
+
+  const clean = await client.callTool({
+    name: 'create_mock',
+    arguments: {
+      name: '干净的规则',
+      url: '/api/brand-new-endpoint',
+      methods: ['POST'],
+      hosts: ['shop.example.com'],
+      body: '{}',
+    },
+  });
+  check('无冲突时不啰嗦', !clean.content[0].text.includes('⚠️') && !clean.content[0].text.includes('💡'));
+
   // ── 破坏性操作的提示 ────────────────────────────────
+  // 前面用 kind:"virtual" 建过规则，关总开关会让它真的 404 —— 必须提醒
   const off = await client.callTool({ name: 'set_global_enabled', arguments: { enabled: false } });
-  check('关总开关时不提虚拟接口（当前没有生效的 virtual 规则）', !off.content[0].text.includes('⚠️'));
+  check('关总开关时提醒虚拟接口会真的失败', off.content[0].text.includes('虚拟接口'), off.content[0].text);
 
   const bad = await client.callTool({ name: 'delete_mock', arguments: { id: 'nope' } });
   check('删不存在的规则给出明确错误', bad.isError === true);
 
+  // ═══════════════════════════════════════════════════
+  // 多个 AI 工具共用一个扩展
+  // ═══════════════════════════════════════════════════
+  console.log('\n▶ 第二个 MCP 客户端接入同一个扩展\n');
+
+  const t2 = new StdioClientTransport({
+    command: 'node',
+    args: [SERVER],
+    env: { ...process.env, MOCK_STUDIO_TOKEN: TOKEN, MOCK_STUDIO_PORT: String(PORT) },
+    stderr: 'pipe',
+  });
+  const client2 = new Client({ name: 'e2e-2', version: '0' });
+  await client2.connect(t2);
+
+  // 第一版这里会直接 EADDRINUSE 退出；现在应该作为 peer 接进来
+  const s2 = await client2.callTool({ name: 'get_status', arguments: {} });
+  check(
+    '第二个客户端能起来（不再撞端口退出）',
+    !s2.content[0].text.startsWith('❌'),
+    s2.content[0].text.slice(0, 120),
+  );
+  // 两个客户端同一时刻问同一件事，应该看到同一份状态 —— 它们背后是同一个扩展
+  const s1again = await client.callTool({ name: 'get_status', arguments: {} });
+  check(
+    '两个客户端读到的是【同一个扩展】的数据',
+    JSON.parse(s2.content[0].text).ruleCount === JSON.parse(s1again.content[0].text).ruleCount,
+    `peer=${JSON.parse(s2.content[0].text).ruleCount} hub=${JSON.parse(s1again.content[0].text).ruleCount}`,
+  );
+
+  const before2 = ext.dispatched.length;
+  const w2 = await client2.callTool({
+    name: 'create_mock',
+    arguments: {
+      name: '来自第二个客户端',
+      url: '/api/from-peer',
+      methods: ['GET'],
+      hosts: ['shop.example.com'],
+      body: '{}',
+    },
+  });
+  check('第二个客户端也能写规则', w2.content[0].text.includes('已创建规则'));
+  check('写操作确实落到了同一个扩展', ext.dispatched.length === before2 + 1);
+
+  // ── 死连接清理 ────────────────────────────────────
+  console.log('\n▶ 连接生命周期\n');
+  const ext2 = await fakeExtension({ port: PORT, token: TOKEN });
+  await sleep(300);
+  check('新扩展连接会顶掉旧的（旧的收到 4004）', ext.closedCode === 4004, `实际 ${ext.closedCode}`);
+
+  const s3 = await client.callTool({ name: 'get_status', arguments: {} });
+  check('顶替后第一个客户端仍然可用', !s3.content[0].text.startsWith('❌'));
+
+  ext2.ws.close();
+  await client2.close();
+  await t2.close();
   ext.ws.close();
   await client.close();
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 /**

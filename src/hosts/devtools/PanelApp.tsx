@@ -22,11 +22,15 @@ import type { Rule, RuleDraft } from '@core/types.js';
 import { useStore } from '@ui/useStore.js';
 import { Splitter, useResizable } from '@ui/Splitter.js';
 import { RuleEditor } from '../options/RuleEditor.js';
+import { CodeEditor } from '@ui/CodeEditor.js';
 
 const inspectedTabId = chrome.devtools.inspectedWindow.tabId;
 
-/** DevTools 面板通常比较窄，默认给小一点 */
-const SIDE_DEFAULT_WIDTH = 480;
+/**
+ * 侧栏默认宽度。详情面板是左右两栏（元信息 + 响应体），
+ * 480 会把响应体挤成面条，所以给到 640；不够还能拖。
+ */
+const SIDE_DEFAULT_WIDTH = 640;
 
 export function PanelApp() {
   const { store, run } = useStore();
@@ -108,6 +112,23 @@ export function PanelApp() {
     setCreatedId(null);
   };
 
+  /**
+   * 详情面板里直接改规则响应，不用跳去规则管理页。
+   *
+   * 只改**当前生效变体**的 body —— 其余配置（匹配条件、状态码、变体结构）
+   * 还是去完整编辑器改。这里要的是「看到不对，顺手改一下」这条最短路径。
+   */
+  const saveRuleBody = async (ruleId: string, variantId: string, body: string) => {
+    const rule = store?.rules.find((r) => r.id === ruleId);
+    const variant = rule?.variants.find((v) => v.id === variantId);
+    if (!variant) return false;
+    const res = await run({
+      type: 'UPDATE_VARIANT',
+      payload: { ruleId, variantId, patch: { response: { ...variant.response, body } } },
+    });
+    return res.ok;
+  };
+
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
@@ -184,8 +205,10 @@ export function PanelApp() {
           <div style={{ width: sidePane.width, flexShrink: 0, minWidth: 0 }}>
             <DetailPane
               entry={selected}
+              rule={store?.rules.find((r) => r.id === selected.ruleId)}
               onConvert={() => convertToMock(selected)}
               onClose={() => setSelected(null)}
+              onSaveBody={saveRuleBody}
             />
           </div>
         )
@@ -341,97 +364,257 @@ function EntryRow({
   );
 }
 
+/**
+ * 请求详情 —— 左右分栏
+ *
+ * 之前是单栏竖排：元信息一条条堆上去，响应体挤在最底下一个矮 <pre> 里，
+ * 又窄又没高亮，一个几百行的接口响应根本看不了。
+ *
+ * 现在左边放元信息（固定窄栏），右边整块留给响应体 ——
+ * 响应体拿到**整个面板的高度**，这是可读性提升最大的一步。
+ * 面板本身已经能拖宽，横向不够时把它拖开就是了。
+ */
 function DetailPane({
   entry,
+  rule,
   onConvert,
   onClose,
+  onSaveBody,
 }: {
   entry: CapturedRequest;
+  /** 命中的规则。只有已 Mock 的请求才有 —— 有它才谈得上「就地编辑」 */
+  rule?: Rule;
   onConvert: () => void;
   onClose: () => void;
+  onSaveBody: (ruleId: string, variantId: string, body: string) => Promise<boolean>;
 }) {
+  const [copied, setCopied] = useState(false);
+  /**
+   * 看「实际返回」还是「规则内容」。
+   *
+   * ⚠️ 这两者对 mockjs / dynamic 规则**完全不是一回事**：
+   * 实际返回是模板展开/JS 执行后的结果，规则内容才是你写的那份源码。
+   * 早期想过让响应体直接可编辑，但那样用户改的是**生成结果**，
+   * 一保存就把模板覆盖成了某一次的快照 —— 数据从此不再变化，还很难发现。
+   * 所以必须分成两个明确的视图，而不是一个含糊的「编辑」。
+   */
+  const [tab, setTab] = useState<'actual' | 'source'>('actual');
+  const [dirtyBody, setDirtyBody] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const variant = rule?.variants.find((v) => v.id === rule.activeVariantId) ?? rule?.variants[0];
+  const editable = !!rule && !!variant;
+  /** 生成式规则的「实际返回」是算出来的，跟源码差得远 —— 要显式告诉用户 */
+  const generated = variant ? variant.response.bodyType !== 'static' : false;
+
+  // 换了一条请求就把未保存的编辑丢掉，否则会把 A 的改动存到 B 上
+  useEffect(() => {
+    setDirtyBody(null);
+    setSaved(false);
+    setTab('actual');
+  }, [entry.id]);
+
+  /** 响应体格式化后再给编辑器 —— 原始的是压成一行的，缩进后才谈得上「可读」 */
+  const pretty = useMemo(() => {
+    const raw = entry.body;
+    if (!raw) return '';
+    try {
+      return JSON.stringify(JSON.parse(raw), null, 2);
+    } catch {
+      return raw; // 不是 JSON 就原样显示，不强行改造
+    }
+  }, [entry.body]);
+
+  const sourceBody = dirtyBody ?? variant?.response.body ?? '';
+  const dirty = dirtyBody !== null && dirtyBody !== variant?.response.body;
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(tab === 'actual' ? (entry.body ?? '') : sourceBody);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* 剪贴板不可用时用户还能自己选中复制 */
+    }
+  };
+
+  const save = async () => {
+    if (!rule || !variant || !dirty) return;
+    setSaving(true);
+    const ok = await onSaveBody(rule.id, variant.id, sourceBody);
+    setSaving(false);
+    if (ok) {
+      setDirtyBody(null);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    }
+  };
+
   return (
-    <div
-      style={{
-        height: '100%',
-        borderLeft: '1px solid var(--border)',
-        padding: 12,
-        overflowY: 'auto',
-      }}
-    >
-      <div className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
+    <div className="detail">
+      <div className="detail__head">
         <strong style={{ fontSize: 12 }}>请求详情</strong>
-        <div className="row" style={{ gap: 6 }}>
-          {!entry.mocked && (
-            <button
-              className="primary"
-              style={{ padding: '2px 9px', fontSize: 11 }}
-              onClick={onConvert}
-            >
-              转为 Mock
-            </button>
-          )}
-          <button style={{ padding: '2px 7px', fontSize: 11 }} onClick={onClose}>
-            关闭
+        <span className="grow" />
+        {!entry.mocked && (
+          <button className="primary" style={{ padding: '2px 9px', fontSize: 11 }} onClick={onConvert}>
+            转为 Mock
           </button>
-        </div>
+        )}
+        <button style={{ padding: '2px 7px', fontSize: 11 }} onClick={onClose}>
+          关闭
+        </button>
       </div>
 
-      <KV k="URL" v={entry.url} mono />
-      <KV k="Method" v={entry.method} />
-      <KV k="状态" v={String(entry.status ?? '—')} />
-      <KV k="来源" v={entry.api === 'xhr' ? 'XMLHttpRequest' : 'fetch'} />
-      {entry.mocked && entry.ruleName && <KV k="命中规则" v={entry.ruleName} />}
+      <div className="detail__cols">
+        {/* ── 左：元信息 ── */}
+        <div className="detail__meta">
+          <KV k="Method" v={entry.method} />
+          <KV k="状态" v={String(entry.status ?? '—')} bad={!!entry.status && entry.status >= 400} />
+          <KV k="来源" v={entry.api === 'xhr' ? 'XMLHttpRequest' : 'fetch'} />
+          {entry.durationMs != null && <KV k="耗时" v={`${entry.durationMs}ms`} />}
+          {entry.mocked && entry.ruleName && <KV k="命中规则" v={entry.ruleName} />}
+          {variant && rule && rule.variants.length > 1 && (
+            <KV k="当前变体" v={variant.name} />
+          )}
+          <KV k="URL" v={entry.url} mono wrap />
 
-      {entry.bodyGen && (
-        <div style={{ marginTop: 8 }}>
-          <label>{entry.bodyGen.kind === 'mockjs' ? 'Mock 模板' : '动态响应'}</label>
-          {entry.bodyGen.ok ? (
-            <div className={entry.bodyGen.slow ? 'warn' : 'ok'} style={{ fontSize: 11 }}>
-              ✓ 生成成功 · {entry.bodyGen.durationMs.toFixed(1)}ms
-              {entry.bodyGen.slow && ' —— 偏慢，翻页高频调用时可能拖慢页面'}
-            </div>
-          ) : (
-            <div className="banner banner-bad" style={{ fontSize: 11, lineHeight: 1.5 }}>
-              ✗ {entry.bodyGen.error}
-              {entry.bodyGen.tripped && (
-                <div style={{ marginTop: 4 }} className="muted">
-                  已熔断，暂停执行。改完保存后会自动恢复。
+          {entry.bodyGen && (
+            <div style={{ marginTop: 10 }}>
+              <label>{entry.bodyGen.kind === 'mockjs' ? 'Mock 模板' : '动态响应'}</label>
+              {entry.bodyGen.ok ? (
+                <div className={entry.bodyGen.slow ? 'warn' : 'ok'} style={{ fontSize: 11 }}>
+                  ✓ 生成成功 · {entry.bodyGen.durationMs.toFixed(1)}ms
+                  {entry.bodyGen.slow && ' —— 偏慢，翻页高频调用时可能拖慢页面'}
+                </div>
+              ) : (
+                <div className="banner banner-bad" style={{ fontSize: 11, lineHeight: 1.5 }}>
+                  ✗ {entry.bodyGen.error}
+                  {entry.bodyGen.tripped && (
+                    <div style={{ marginTop: 4 }} className="muted">
+                      已熔断，暂停执行。改完保存后会自动恢复。
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           )}
         </div>
-      )}
 
-      <div style={{ marginTop: 10 }}>
-        <label>响应体{entry.truncated && '（已截断）'}</label>
-        <pre
-          className="mono"
-          style={{
-            margin: 0,
-            padding: 8,
-            maxHeight: 380,
-            overflow: 'auto',
-            background: 'var(--surface)',
-            borderRadius: 6,
-            fontSize: 11,
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-all',
-          }}
-        >
-          {entry.body ?? '（无内容）'}
-        </pre>
+        {/* ── 右：响应体，占满剩余空间 ── */}
+        <div className="detail__body">
+          <div className="detail__bodyhead">
+            {editable ? (
+              <div className="bodytype" style={{ margin: 0 }}>
+                <button
+                  className={tab === 'actual' ? 'bodytype__on' : ''}
+                  onClick={() => setTab('actual')}
+                  title="页面这次实际收到的内容"
+                >
+                  实际返回
+                </button>
+                <button
+                  className={tab === 'source' ? 'bodytype__on' : ''}
+                  onClick={() => setTab('source')}
+                  title="规则里写的那份内容，可以直接改"
+                >
+                  规则内容{dirty ? ' ·' : ''}
+                </button>
+              </div>
+            ) : (
+              <label style={{ margin: 0 }}>
+                响应体
+                {entry.truncated && <span className="warn"> · 已截断</span>}
+              </label>
+            )}
+
+            <span className="grow" />
+
+            {tab === 'source' && editable && (
+              <>
+                {saved && <span className="ok" style={{ fontSize: 11 }}>✓ 已保存</span>}
+                <button
+                  className={dirty ? 'primary tiny' : 'tiny'}
+                  disabled={!dirty || saving}
+                  onClick={save}
+                  title="保存到这条规则的当前变体"
+                >
+                  {saving ? '保存中…' : '保存'}
+                </button>
+              </>
+            )}
+            <span className="faint" style={{ fontSize: 10.5 }}>
+              {tab === 'actual' ? sizeOf(entry.body) : ''}
+            </span>
+            <button className="tiny ghost" onClick={copy}>
+              {copied ? '已复制' : '复制'}
+            </button>
+          </div>
+
+          {/* 生成式规则：两个视图差别很大，说清楚免得用户以为哪个坏了 */}
+          {editable && generated && (
+            <div className="faint" style={{ fontSize: 10.5, lineHeight: 1.5 }}>
+              {tab === 'actual'
+                ? `这是${variant!.response.bodyType === 'mockjs' ? '模板展开' : 'JS 执行'}后的结果，每次请求都会重新生成。要改内容请切到「规则内容」。`
+                : `这是规则里写的${variant!.response.bodyType === 'mockjs' ? ' Mock 模板' : ' JS 源码'}，不是页面收到的东西。改完保存，刷新页面生效。`}
+            </div>
+          )}
+
+          {tab === 'actual' ? (
+            entry.body ? (
+              <CodeEditor
+                key={`${entry.id}-actual`}
+                value={pretty}
+                onChange={() => {}}
+                readOnly
+                height="100%"
+              />
+            ) : (
+              <div className="empty" style={{ fontSize: 11 }}>（无响应体）</div>
+            )
+          ) : (
+            <CodeEditor
+              key={`${entry.id}-source-${variant?.id}`}
+              value={sourceBody}
+              onChange={setDirtyBody}
+              language={variant?.response.bodyType === 'dynamic' ? 'js' : 'json'}
+              height="100%"
+            />
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-function KV({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
+function sizeOf(body: string | null): string {
+  if (!body) return '';
+  const bytes = new Blob([body]).size;
+  return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+function KV({
+  k,
+  v,
+  mono,
+  wrap,
+  bad,
+}: {
+  k: string;
+  v: string;
+  mono?: boolean;
+  /** 长内容（URL）才需要折行，短字段折行只会让左栏高低不齐 */
+  wrap?: boolean;
+  bad?: boolean;
+}) {
   return (
-    <div style={{ marginBottom: 5 }}>
+    <div style={{ marginBottom: 6 }}>
       <label>{k}</label>
-      <div className={mono ? 'mono' : undefined} style={{ fontSize: 11, wordBreak: 'break-all' }}>
+      <div
+        className={[mono && 'mono', bad && 'bad'].filter(Boolean).join(' ') || undefined}
+        style={{ fontSize: 11, wordBreak: wrap ? 'break-all' : 'normal' }}
+        title={v}
+      >
         {v}
       </div>
     </div>

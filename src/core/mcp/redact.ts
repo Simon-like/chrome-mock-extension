@@ -72,6 +72,35 @@ export function looksLikeSecret(value: string): boolean {
   return JWT.test(value) || LONG_OPAQUE.test(value);
 }
 
+/**
+ * 个人信息（PII）。**按值的形状识别，不按键名。**
+ *
+ * 为什么不加进 SENSITIVE_KEYS：那份表是「包含即命中」，
+ * 加个 `mobile` 进去，`isMobile` 这种布尔字段也会被打码；
+ * 而键名叫 `nick` / `contact` / `user` 的邮箱又照样漏。两头不讨好。
+ *
+ * 按值识别就没这个问题：`lihan183@jd.com` 不管挂在哪个字段名下都会被抓到，
+ * `isMobile: true` 则完全不受影响。
+ *
+ * 这一条是拿真实公司接口验出来的 —— 第一版只防凭证，
+ * 结果登录接口返回的真实姓名、邮箱、部门原样出给了 AI。
+ * 防线只挡「密码类」是不够的，PII 同样不该进 AI 的上下文。
+ */
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** 中国大陆手机号。刻意不做宽泛的「11 位数字」—— 订单号、时间戳都是那个长度 */
+const CN_MOBILE = /^1[3-9]\d{9}$/;
+/** 身份证：18 位，末位可能是 X */
+const CN_ID = /^\d{17}[\dXx]$/;
+
+export function looksLikePii(value: string): boolean {
+  return EMAIL.test(value) || CN_MOBILE.test(value) || CN_ID.test(value);
+}
+
+/** 值本身是否该打码：凭证或个人信息 */
+function sensitiveValue(value: string): boolean {
+  return looksLikeSecret(value) || looksLikePii(value);
+}
+
 // ═══════════════════════════════════════════════════════════
 // URL
 // ═══════════════════════════════════════════════════════════
@@ -91,7 +120,7 @@ export function redactUrl(url: string): string {
     let changed = false;
     for (const key of [...u.searchParams.keys()]) {
       const val = u.searchParams.get(key) ?? '';
-      if (isSensitiveKey(key) || looksLikeSecret(val)) {
+      if (isSensitiveKey(key) || sensitiveValue(val)) {
         u.searchParams.set(key, REDACTED);
         changed = true;
       }
@@ -123,7 +152,7 @@ export function redactValue(value: unknown, depth = 0): unknown {
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
       if (isSensitiveKey(k)) {
         out[k] = REDACTED;
-      } else if (typeof v === 'string' && looksLikeSecret(v)) {
+      } else if (typeof v === 'string' && sensitiveValue(v)) {
         out[k] = REDACTED;
       } else {
         out[k] = redactValue(v, depth + 1);
@@ -171,13 +200,13 @@ export function redactText(text: string): string {
       .replace(
         /^([ \t]*)([A-Za-z0-9_-]+)([ \t]*:[ \t]*)(.+)$/gm,
         (raw, indent: string, key: string, sep: string, val: string) =>
-          isSensitiveKey(key) || looksLikeSecret(val.trim())
+          isSensitiveKey(key) || sensitiveValue(val.trim())
             ? `${indent}${key}${sep}${REDACTED}`
             : raw,
       )
       // query / form 风格：`key=value`，值到 & ; 或空白为止
       .replace(/([A-Za-z0-9_-]+)=([^\s&;]+)/g, (raw, key: string, val: string) =>
-        isSensitiveKey(key) || looksLikeSecret(val) ? `${key}=${REDACTED}` : raw,
+        isSensitiveKey(key) || sensitiveValue(val) ? `${key}=${REDACTED}` : raw,
       )
       // 裸露的 JWT，前两条都没盖住的情况
       .replace(/\b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, REDACTED)

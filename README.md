@@ -178,14 +178,19 @@ cd mcp-server && npm install && npm run build
 ```
 
 然后在规则管理页点右上角 **MCP** → 开启 → 复制那段客户端配置，粘进 Claude Code 的
-`.mcp.json`。配对码会自动生成。
+`.mcp.json`（或 Cursor 的 MCP 配置）。配对码会自动生成。
+
+**五分钟接上的完整步骤、常用说法、排查表 → [13 MCP 使用指南](./docs/13-MCP使用指南.md)**
 
 > **安全**：只监听 `127.0.0.1`；`Origin` 必须是 `chrome-extension://`（挡掉所有网页）；
 > 配对码挡掉本机其他进程。出给 AI 的数据**强制脱敏且不可关闭** ——
-> token / cookie / 密码等一律打码，脱敏发生在**扩展侧**（数据离开之前），
-> 所以就算端口被别的进程连上，拿到的也已经是打过码的。
+> 凭证按键名打码，JWT / 邮箱 / 手机号 / 身份证按**值的形状**打码，
+> 脱敏发生在**扩展侧**（数据离开之前），就算端口被别的进程连上，拿到的也已经是打过码的。
 >
-> 完整说明见 [12 MCP Server](./docs/12-MCP-Server.md)。
+> ⚠️ 但**真实姓名、部门、接口路径、业务数据拦不住** —— 涉密项目请关掉读侧，
+> 或用域名白名单只放行测试环境。边界说明见 [使用指南 §4](./docs/13-MCP使用指南.md)。
+>
+> 实现与设计取舍见 [12 MCP Server](./docs/12-MCP-Server.md)。
 
 ---
 
@@ -401,7 +406,7 @@ observedCount + mockedCount > 0        // ✅ 正确
 ```bash
 npm run dev            # 开发模式：UI 热更新 + 注入脚本自动重建
 npm run build          # 完整构建（类型检查 + 注入脚本 + 主构建）
-npm test               # 266 个单元测试
+npm test               # 274 个单元测试
 npm run typecheck      # 只做类型检查
 ```
 
@@ -434,9 +439,9 @@ npm run typecheck      # 只做类型检查
 | `tests/dynamic.test.ts` | 16 | **动态响应**：两种写法编译、执行降级、序列化边界 |
 | `tests/mockjs.test.ts` | 39 | **Mock 模板**：数量/递增/浮点规则、占位符、护栏、确定性 |
 | `tests/bodygen.test.ts` | 15 | **生成运行时**：编译缓存、连错熔断、报告去重 |
-| `tests/redact.test.ts` | 32 | **脱敏**（安全边界）：敏感键识别、JWT、URL / 响应体、白名单通配 |
+| `tests/redact.test.ts` | 40 | **脱敏**（安全边界）：敏感键识别、JWT、URL / 响应体、白名单通配 |
 
-另有 **18 项 MCP 端到端**（`cd mcp-server && npm run e2e`）：用假扩展冒充 Chrome 侧，
+另有 **39 项 MCP 端到端**（`cd mcp-server && npm run e2e`）：用假扩展冒充 Chrome 侧，
 验证握手、Origin/配对码拒绝、读侧四个工具、写侧闭环。跑的是编译产物。
 
 注入层测试跑在 happy-dom 里真实执行 hook 逻辑 —— 伪造 XHR 响应是全项目最容易写错的地方
@@ -483,6 +488,8 @@ npm run typecheck      # 只做类型检查
 | | 内容 |
 | --- | --- |
 | [01 市场调研与产品报告](./docs/01-市场调研与产品报告.md) | 竞品盘点、三条技术路线的取舍、产品定位与差异化 |
+| [13 MCP 使用指南](./docs/13-MCP使用指南.md) | **怎么接、怎么用、AI 能看到什么、排查表** |
+| [12 MCP Server](./docs/12-MCP-Server.md) | MCP 的架构、三道安全校验、脱敏设计 |
 | [02 需求补充](./docs/02-需求补充：AI协同与虚拟接口.md) | AI 协同三级方案、虚拟接口、为 MCP 做的架构预留 |
 | [03 知识扫盲](./docs/03-知识扫盲：Chrome插件核心概念.md) | Chrome 插件核心概念，零基础可读 |
 | [04 Spike 验证结论](./docs/04-Spike验证结论.md) | 真实站点上的可行性验证结果 |

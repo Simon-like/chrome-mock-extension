@@ -34,6 +34,12 @@ interface Props {
   height?: string;
   /** JS 模式下工具栏右侧的额外按钮（如「插入模板」） */
   actions?: React.ReactNode;
+  /**
+   * 只读模式：用于「看别人产出的内容」，如 DevTools 里查看响应体。
+   * 仍然保留语法高亮、折叠、行号 —— 这些才是可读性的来源，
+   * 去掉的只是编辑能力和那些改不了内容时毫无意义的按钮。
+   */
+  readOnly?: boolean;
 }
 
 interface Status {
@@ -47,6 +53,7 @@ export function CodeEditor({
   language = 'json',
   height = '100%',
   actions,
+  readOnly = false,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -69,6 +76,7 @@ export function CodeEditor({
       // JSON 有现成的 linter；JS 的错误由下面的 updateListener 从语法树里读
       ...(isJs ? [] : [linter(jsonParseLinter())]),
       EditorView.lineWrapping,
+      ...(readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []),
       EditorView.theme({
         '&': { height: '100%', fontSize: '12px' },
         '.cm-scroller': {
@@ -95,9 +103,10 @@ export function CodeEditor({
       view.destroy();
       viewRef.current = null;
     };
-    // language 变了要整个重建（扩展集不同）。value 只初始化一次，后续走下面的 effect
+    // language / readOnly 变了要整个重建（扩展集不同）。
+    // value 只初始化一次，后续走下面的 effect
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [language]);
+  }, [language, readOnly]);
 
   // 外部值变化时同步进编辑器（如 Capture-to-Mock 填入、场景预设、插入模板）
   useEffect(() => {
@@ -138,7 +147,8 @@ export function CodeEditor({
       <div className="json-editor__toolbar">
         {/* 格式化/压缩是 JSON 专属：JS 源码没有安全的重排办法
             （没打包 prettier，手写缩进器会把用户代码改坏） */}
-        {language === 'json' && (
+        {/* 格式化/压缩会改内容，只读时没有意义；折叠/展开只影响显示，留着 */}
+        {language === 'json' && !readOnly && (
           <>
             <button type="button" onClick={format} title="格式化并缩进">
               格式化

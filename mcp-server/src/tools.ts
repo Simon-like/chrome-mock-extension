@@ -25,18 +25,71 @@
 
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { BridgeServer } from './bridge.js';
+import type { BridgeTransport } from './bridge.js';
 import type { BridgeData, RedactedCapture } from '../../src/shared/bridge.js';
 import type { MockStore, Rule } from '../../src/core/types.js';
 import type { Command } from '../../src/core/command/types.js';
 import { createRuleDraft, createResponseSpec } from '../../src/core/store/defaults.js';
+import { findShadowedRules } from '../../src/core/store/validate.js';
+import type { ResponseSpec } from '../../src/core/types.js';
 
 type Json = { content: { type: 'text'; text: string }[]; isError?: boolean };
+
+/**
+ * 一份响应的完整可配项 —— 和 UI 上能填的东西一一对应。
+ *
+ * 之前 create_mock 只暴露了 status/body/delay，headers 和 behavior 填不了，
+ * 于是「模拟请求超时」「模拟断网」这类最常见的测试场景 AI 根本做不到。
+ * 工具能表达的东西比 UI 少，AI 就只能让用户自己去点 —— 那 MCP 就白做了一半。
+ */
+const variantShape = {
+  status: z.number().int().min(100).max(599).optional().describe('HTTP 状态码，默认 200'),
+  body: z.string().describe('响应体字符串，含义由 body_type 决定'),
+  body_type: z.enum(['static', 'mockjs', 'dynamic']).optional().describe('默认 static'),
+  delay_ms: z.number().int().min(0).optional().describe('模拟慢网络'),
+  headers: z
+    .record(z.string(), z.string())
+    .optional()
+    .describe('自定义响应头。content-type 默认是 application/json，要改在这里覆盖'),
+  behavior: z
+    .enum(['normal', 'timeout', 'networkError'])
+    .optional()
+    .describe(
+      'normal=正常返回；timeout=请求永远挂起（测加载态/超时处理）；' +
+        'networkError=直接网络错误（测断网兜底）。后两种时 body 不会被使用',
+    ),
+  shell_template_id: z
+    .string()
+    .optional()
+    .describe('响应外壳 id，见 list_shell_templates。填了 body 就只写业务数据'),
+};
+
+type VariantInput = {
+  status?: number;
+  body: string;
+  body_type?: 'static' | 'mockjs' | 'dynamic';
+  delay_ms?: number;
+  headers?: Record<string, string>;
+  behavior?: 'normal' | 'timeout' | 'networkError';
+  shell_template_id?: string;
+};
+
+function toResponseSpec(v: VariantInput): ResponseSpec {
+  return createResponseSpec({
+    status: v.status ?? 200,
+    body: v.body,
+    bodyType: v.body_type ?? 'static',
+    delayMs: v.delay_ms ?? 0,
+    headers: v.headers ?? {},
+    behavior: v.behavior ?? 'normal',
+    shellTemplateId: v.shell_template_id ?? null,
+  });
+}
 
 const text = (s: string): Json => ({ content: [{ type: 'text', text: s }] });
 const json = (v: unknown): Json => text(JSON.stringify(v, null, 2));
 
-export function registerTools(server: McpServer, bridge: BridgeServer): void {
+export function registerTools(server: McpServer, bridge: BridgeTransport): void {
   /** 所有工具共用的错误处理：把异常变成 AI 看得懂的文本，而不是协议层错误 */
   const guard =
     <A extends object>(fn: (args: A) => Promise<Json>) =>
@@ -214,25 +267,40 @@ export function registerTools(server: McpServer, bridge: BridgeServer): void {
         'body 是【字符串】不是对象。bodyType 决定怎么解释它：\n' +
         '- static：body 是一段 JSON\n' +
         '- mockjs：body 是数据模板，如 {"list|10":[{"id|+1":1,"name":"@cname"}]}\n' +
-        '- dynamic：body 是 JS 源码，如 (req) => ({ page: Number(req.query.page) })',
+        '- dynamic：body 是 JS 源码，如 (req) => ({ page: Number(req.query.page) })\n\n' +
+        '**要测多种状态就一次性传 variants**（正常/空数据/报错…），' +
+        '之后用 set_active_variant 一键切换 —— 比建多条规则再互相启停干净得多。\n' +
+        '创建后会自动检查是否和已有规则冲突（遮蔽/重复），有问题会在返回里说明。',
       inputSchema: {
         name: z.string().describe('规则名，给人看的'),
         url: z.string().describe('匹配串。通常填 pathname，如 /api/goods/list'),
         url_mode: z.enum(['contains', 'wildcard', 'regex']).optional().describe('默认 contains'),
-        methods: z.array(z.string()).optional().describe('限定请求方法，不填=全部'),
-        hosts: z.array(z.string()).optional().describe('限定域名，不填=不限'),
-        kind: z.enum(['override', 'virtual']).optional().describe('默认 override'),
-        status: z.number().int().optional().describe('HTTP 状态码，默认 200'),
-        body: z.string().describe('响应体字符串，含义由 body_type 决定'),
-        body_type: z.enum(['static', 'mockjs', 'dynamic']).optional().describe('默认 static'),
-        shell_template_id: z
-          .string()
+        methods: z
+          .array(z.string())
           .optional()
-          .describe('响应外壳 id，见 list_shell_templates。填了 body 就只写业务数据'),
-        delay_ms: z.number().int().min(0).optional().describe('模拟慢网络'),
+          .describe('限定请求方法。**强烈建议填**，不填会匹配该 URL 的所有方法，容易误伤'),
+        hosts: z
+          .array(z.string())
+          .optional()
+          .describe('限定域名。**强烈建议填**，不填的话别的站点上同名路径也会被 mock'),
+        kind: z.enum(['override', 'virtual']).optional().describe('默认 override'),
+        ...variantShape,
+        variants: z
+          .array(z.object({ name: z.string().describe('变体名，如「空数据」「报错」'), ...variantShape }))
+          .optional()
+          .describe(
+            '一次建多个变体。给了它就忽略上面那组扁平参数。' +
+              '第一个是默认生效的，所以把最常用的那份放第一位',
+          ),
       },
     },
     guard(async (a) => {
+      const variants =
+        a.variants && a.variants.length > 0
+          ? a.variants.map((v) => ({ name: v.name, response: toResponseSpec(v) }))
+          : [{ name: '默认', response: toResponseSpec(a) }];
+
+      const before = await getState();
       const draft = createRuleDraft({
         name: a.name,
         kind: a.kind ?? 'override',
@@ -242,23 +310,62 @@ export function registerTools(server: McpServer, bridge: BridgeServer): void {
           methods: (a.methods ?? []) as never,
           hosts: a.hosts ?? [],
         },
-        variants: [
-          {
-            name: '默认',
-            response: createResponseSpec({
-              status: a.status ?? 200,
-              body: a.body,
-              bodyType: a.body_type ?? 'static',
-              shellTemplateId: a.shell_template_id ?? null,
-              delayMs: a.delay_ms ?? 0,
-            }),
-          },
-        ],
+        variants,
       });
       const r = await dispatch({ type: 'CREATE_RULE', payload: { draft } });
+
+      const after = await getState();
+      const notes = [
+        ...duplicateNotes(before, a.url, a.methods),
+        ...shadowNotes(after, r.createdId ?? ''),
+        ...scopeNotes(a.methods, a.hosts),
+      ];
+
       return text(
-        `✅ 已创建规则「${a.name}」（id: ${r.createdId}）。` +
-          '规则立即生效，但**页面已经发出的请求不会重来** —— 让用户刷新页面。',
+        `✅ 已创建规则「${a.name}」（id: ${r.createdId}）` +
+          (variants.length > 1 ? `，含 ${variants.length} 个变体，默认生效「${variants[0]!.name}」` : '') +
+          '。\n规则立即生效，但**页面已经发出的请求不会重来** —— 让用户刷新页面。' +
+          (notes.length ? `\n\n${notes.join('\n')}` : ''),
+      );
+    }),
+  );
+
+  server.registerTool(
+    'add_variant',
+    {
+      title: '给已有规则加一个变体',
+      description:
+        '在一条规则上追加一份响应（如「空数据」「报错」「超时」），原来的不会丢。\n' +
+        '想测空态/错误态时用这个，而不是 update_mock —— update_mock 会**覆盖**当前那份数据。\n' +
+        '加完用 set_active_variant 切过去。',
+      inputSchema: {
+        rule_id: z.string(),
+        name: z.string().describe('变体名，如「空数据」「500 报错」'),
+        activate: z
+          .boolean()
+          .optional()
+          .describe('建完是否立刻切过去，默认 true。想先建着不影响页面就传 false'),
+        ...variantShape,
+      },
+    },
+    guard(async (a) => {
+      const store = await getState();
+      const rule = store.rules.find((x) => x.id === a.rule_id);
+      if (!rule) return { ...text(`没有 id 为 ${a.rule_id} 的规则`), isError: true };
+
+      await dispatch({
+        type: 'CREATE_VARIANT',
+        payload: {
+          ruleId: a.rule_id,
+          name: a.name,
+          response: toResponseSpec(a),
+          activate: a.activate ?? true,
+        },
+      });
+      return text(
+        `✅ 已给规则「${rule.name}」加上变体「${a.name}」` +
+          (a.activate === false ? '（未切换，当前仍是原来那份）' : '，并已切为生效') +
+          '。让用户刷新页面生效。',
       );
     }),
   );
@@ -268,15 +375,24 @@ export function registerTools(server: McpServer, bridge: BridgeServer): void {
     {
       title: '改一条已有规则的响应',
       description:
-        '改一条规则【当前生效变体】的响应体 / 状态码 / 延迟。id 来自 list_rules。\n' +
-        '注意它改的是现有变体，不会新建变体 —— 想保留原来那份数据、另外加一份' +
-        '（比如再来个空态版本），应该让用户在扩展里新建变体，或者用 create_mock 另建一条规则。',
+        '改一条规则某个变体的响应（默认改当前生效的那个）。id 来自 list_rules。\n' +
+        '⚠️ 它是**覆盖**，原来那份数据就没了。想保留原数据、另外加一份（比如再来个空态版本），' +
+        '用 add_variant。\n' +
+        '只传想改的字段，没传的保持原样。',
       inputSchema: {
         id: z.string(),
+        variant_id: z
+          .string()
+          .optional()
+          .describe('要改哪个变体，不填则改当前生效的那个。id 见 list_rules'),
+        variant_name: z.string().optional().describe('顺便给变体改个名'),
+        status: z.number().int().min(100).max(599).optional(),
         body: z.string().optional(),
         body_type: z.enum(['static', 'mockjs', 'dynamic']).optional(),
-        status: z.number().int().optional(),
         delay_ms: z.number().int().min(0).optional(),
+        headers: z.record(z.string(), z.string()).optional(),
+        behavior: z.enum(['normal', 'timeout', 'networkError']).optional(),
+        shell_template_id: z.string().optional(),
       },
     },
     guard(async (a) => {
@@ -284,25 +400,42 @@ export function registerTools(server: McpServer, bridge: BridgeServer): void {
       const rule = store.rules.find((r) => r.id === a.id);
       if (!rule) return { ...text(`没有 id 为 ${a.id} 的规则`), isError: true };
 
-      const variantId = rule.activeVariantId;
-      const cur = rule.variants.find((v) => v.id === variantId) ?? rule.variants[0]!;
+      const target =
+        (a.variant_id ? rule.variants.find((v) => v.id === a.variant_id) : undefined) ??
+        rule.variants.find((v) => v.id === rule.activeVariantId) ??
+        rule.variants[0]!;
+      if (a.variant_id && target.id !== a.variant_id) {
+        return { ...text(`规则「${rule.name}」下没有 id 为 ${a.variant_id} 的变体`), isError: true };
+      }
+
+      // 只覆盖显式传进来的字段，其余保持原样 —— 传了 body 就不该把 delay 也重置掉
+      const patched = {
+        ...target.response,
+        ...(a.status !== undefined ? { status: a.status } : {}),
+        ...(a.body !== undefined ? { body: a.body } : {}),
+        ...(a.body_type !== undefined ? { bodyType: a.body_type } : {}),
+        ...(a.delay_ms !== undefined ? { delayMs: a.delay_ms } : {}),
+        ...(a.headers !== undefined ? { headers: a.headers } : {}),
+        ...(a.behavior !== undefined ? { behavior: a.behavior } : {}),
+        ...(a.shell_template_id !== undefined
+          ? { shellTemplateId: a.shell_template_id || null }
+          : {}),
+      };
+
       await dispatch({
         type: 'UPDATE_VARIANT',
         payload: {
           ruleId: a.id,
-          variantId: cur.id,
+          variantId: target.id,
           patch: {
-            response: {
-              ...cur.response,
-              ...(a.body !== undefined ? { body: a.body } : {}),
-              ...(a.body_type !== undefined ? { bodyType: a.body_type } : {}),
-              ...(a.status !== undefined ? { status: a.status } : {}),
-              ...(a.delay_ms !== undefined ? { delayMs: a.delay_ms } : {}),
-            },
+            response: patched,
+            ...(a.variant_name !== undefined ? { name: a.variant_name } : {}),
           },
         },
       });
-      return text(`✅ 已更新规则「${rule.name}」的变体「${cur.name}」。让用户刷新页面生效。`);
+      return text(
+        `✅ 已更新规则「${rule.name}」的变体「${a.variant_name ?? target.name}」。让用户刷新页面生效。`,
+      );
     }),
   );
 
@@ -389,13 +522,79 @@ export function registerTools(server: McpServer, bridge: BridgeServer): void {
  * 直接标注成 `Command` —— 之前想从 BridgeServer['request'] 的参数里
  * 反推这个类型，绕了一大圈还推成了 never。类型能直接写清楚时就别推导。
  */
-async function bridgeDispatch(bridge: BridgeServer, command: Command) {
+async function bridgeDispatch(bridge: BridgeTransport, command: Command) {
   const d = (await bridge.request({ type: 'DISPATCH', command })) as Extract<
     BridgeData,
     { kind: 'dispatch' }
   >;
   if (!d.result.ok) throw new Error(d.result.error ?? '命令被拒绝');
   return d.result;
+}
+
+// ═══════════════════════════════════════════════════════════
+// 冲突检测
+// ═══════════════════════════════════════════════════════════
+//
+// AI 建规则时看不到列表，很容易造出「建了但永远不生效」的规则 ——
+// 而这种规则最难查：它就在那儿、开着、看起来没问题，就是不命中。
+// 所以建完立刻回答三个问题：会不会被遮蔽、会不会遮蔽别人、条件是不是太宽。
+//
+// 检测逻辑直接复用 core 里 UI 用的那份（findShadowedRules），
+// 不重写一套 —— 两套判定迟早会不一致，那比没有检测更糟。
+
+/** 新规则是否被上面某条更宽泛的规则挡住了（或反过来挡住了别人） */
+function shadowNotes(store: MockStore, newRuleId: string): string[] {
+  if (!newRuleId) return [];
+  const shadowed = findShadowedRules(store.rules);
+  const nameOf = (id: string) => store.rules.find((r) => r.id === id)?.name ?? id;
+  const out: string[] = [];
+
+  const shadower = shadowed.get(newRuleId);
+  if (shadower) {
+    out.push(
+      `⚠️ **这条规则可能永远不会命中** —— 它被上方的「${nameOf(shadower)}」遮蔽了。` +
+        `列表顺序即优先级，先到先得。要么把这条往上挪，要么改窄「${nameOf(shadower)}」的匹配条件。`,
+    );
+  }
+  const victims = [...shadowed.entries()]
+    .filter(([id, by]) => by === newRuleId && id !== newRuleId)
+    .map(([id]) => nameOf(id));
+  if (victims.length > 0) {
+    out.push(`⚠️ 这条规则会遮蔽已有规则：${victims.join('、')} —— 它们将不再生效。`);
+  }
+  return out;
+}
+
+/** 同一个 URL 已经有规则了 —— 多半该改而不是再建一条 */
+function duplicateNotes(store: MockStore, url: string, methods?: string[]): string[] {
+  const u = url.trim().toLowerCase();
+  if (!u) return [];
+  const dup = store.rules.filter((r) => {
+    if (r.match.url.trim().toLowerCase() !== u) return false;
+    // 方法不重叠就不算冲突（GET 一条、POST 一条是合理的）
+    if (!methods || methods.length === 0 || r.match.methods.length === 0) return true;
+    return r.match.methods.some((m) => methods.includes(m));
+  });
+  return dup.length === 0
+    ? []
+    : [
+        `⚠️ 已经有匹配同一 URL 的规则：${dup.map((r) => `「${r.name}」`).join('、')}。` +
+          `如果本意是改它的返回，应该用 update_mock 或 add_variant，而不是再建一条 —— ` +
+          `两条都开着时只有靠前的那条生效。`,
+      ];
+}
+
+/** 匹配条件太宽的提醒。不阻止，只是让 AI 知道自己刚做了什么 */
+function scopeNotes(methods?: string[], hosts?: string[]): string[] {
+  const missing: string[] = [];
+  if (!methods || methods.length === 0) missing.push('请求方法');
+  if (!hosts || hosts.length === 0) missing.push('域名');
+  return missing.length === 0
+    ? []
+    : [
+        `💡 没有限定${missing.join('和')}，这条规则会在更大范围内生效。` +
+          `如果只想在某个站点/某个方法上 mock，补上会更安全。`,
+      ];
 }
 
 /** 列表里给 AI 看的精简形态 —— 全量字段会把上下文撑爆，也没必要 */

@@ -18,7 +18,7 @@ import { Switch } from '@ui/Switch.js';
 export type BridgeStatus =
   | { state: 'off' }
   | { state: 'connecting'; port: number }
-  | { state: 'connected'; port: number }
+  | { state: 'connected'; port: number; silentMs: number }
   | { state: 'error'; port: number; reason: string };
 
 interface Props {
@@ -180,11 +180,31 @@ export function McpSettings({ settings, onSave, onClose }: Props) {
                   </button>
                 </div>
                 <pre className="mono codeblock">{clientConfig}</pre>
-                <div className="faint" style={{ fontSize: 10.5, marginTop: 4, lineHeight: 1.6 }}>
-                  粘进 Claude Code 的 <code className="mono">.mcp.json</code>（或 Cursor 的
-                  MCP 配置），把 <code className="mono">&lt;绝对路径&gt;</code> 换成本仓库的真实路径。
-                  首次使用前要先在 <code className="mono">mcp-server/</code> 里跑一次{' '}
-                  <code className="mono">npm install && npm run build</code>。
+                <ol className="faint hintlist">
+                  <li>
+                    先编译一次：在 <code className="mono">mcp-server/</code> 里跑{' '}
+                    <code className="mono">npm install &amp;&amp; npm run build</code>
+                  </li>
+                  <li>
+                    把 <code className="mono">&lt;绝对路径&gt;</code> 换成本仓库的真实路径 ——
+                    在仓库根目录执行 <code className="mono">pwd</code> 就是它。
+                    <b> args 里填的是编译产物 </b>
+                    <code className="mono">dist/…/index.js</code>，不是源码 <code className="mono">.ts</code>
+                  </li>
+                  <li>
+                    把整段粘进 MCP 客户端的配置文件：Claude Code 是
+                    <b> 你打开会话那个目录 </b>的 <code className="mono">.mcp.json</code>
+                    （放到子目录不生效），Cursor 是 <code className="mono">.cursor/mcp.json</code>
+                  </li>
+                  <li>
+                    <b>重启 MCP 客户端</b> —— Server 是它拉起来的子进程，不重启读不到新配置。
+                    Claude Code 首次会弹信任提示，要同意
+                  </li>
+                </ol>
+                <div className="banner banner-warn" style={{ fontSize: 10.5, marginTop: 6, lineHeight: 1.6 }}>
+                  ⚠ 以后改了 <code className="mono">mcp-server/</code> 或{' '}
+                  <code className="mono">src/core/</code> 的代码，要
+                  <b>重新 build 并重启客户端</b>才会生效 —— 客户端跑的是编译产物，不是源码。
                 </div>
               </div>
 
@@ -238,20 +258,34 @@ export function McpSettings({ settings, onSave, onClose }: Props) {
   );
 }
 
+/**
+ * 连接状态。
+ *
+ * 「已连接」不再是个一旦点亮就不灭的灯 —— 它带上了**距上次收到服务端消息多久**。
+ * 服务端正常每 20 秒 PING 一次，所以静默超过 45 秒基本就是对端没了，
+ * 这时显示「疑似断开」比继续显示绿色的「已连接」诚实得多。
+ * （扩展侧的看门狗也会在同一时间窗内主动重连，这里只是把过程让用户看见。）
+ */
 function StatusPill({ status }: { status: BridgeStatus }) {
+  if (status.state === 'connected') {
+    const stale = status.silentMs > 45_000;
+    return (
+      <span className={stale ? 'warn' : 'ok'} style={{ fontSize: 11 }}>
+        ● {stale ? '疑似断开，正在重连…' : '已连接'}
+        <span className="faint" style={{ marginLeft: 6 }}>
+          {formatSilent(status.silentMs)}
+        </span>
+      </span>
+    );
+  }
   const map = {
     off: { cls: 'muted', text: '未启用' },
     connecting: { cls: 'warn', text: '连接中…' },
-    connected: { cls: 'ok', text: '已连接' },
     error: { cls: 'bad', text: '未连接' },
   } as const;
   const s = map[status.state];
   return (
-    <span
-      className={s.cls}
-      style={{ fontSize: 11 }}
-      title={status.state === 'error' ? status.reason : undefined}
-    >
+    <span className={s.cls} style={{ fontSize: 11 }}>
       ● {s.text}
       {status.state === 'error' && (
         <span className="faint" style={{ marginLeft: 6 }}>
@@ -260,4 +294,9 @@ function StatusPill({ status }: { status: BridgeStatus }) {
       )}
     </span>
   );
+}
+
+function formatSilent(ms: number): string {
+  const sec = Math.round(ms / 1000);
+  return sec < 3 ? '刚刚有通信' : `${sec}s 前有通信`;
 }

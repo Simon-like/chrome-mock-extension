@@ -21,8 +21,10 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { BridgeServer } from './bridge.js';
+import WebSocket from 'ws';
+import { createBridge, type BridgeTransport } from './bridge.js';
 import { registerTools } from './tools.js';
+import { registerPrompts } from './prompts.js';
 import { DEFAULT_BRIDGE_PORT } from '../../src/core/types.js';
 
 const VERSION = '0.1.0';
@@ -46,44 +48,63 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const bridge = new BridgeServer(port, token, VERSION);
+  /**
+   * 抢端口：抢到当 Hub，抢不到就连上去当 peer。
+   * 于是**多个 AI 工具可以同时接同一个扩展** —— 不再是第二个直接退出。
+   */
+  let bridge: BridgeTransport;
   try {
-    await bridge.start();
+    bridge = await createBridge({ port, token, serverVersion: VERSION, log, WsCtor: WebSocket });
   } catch (e) {
-    const err = e as NodeJS.ErrnoException;
-    if (err.code === 'EADDRINUSE') {
-      log(
-        `端口 ${port} 已被占用。多半是另一个 mock-studio-mcp 还在跑（MCP 客户端有时会留下旧进程）。\n` +
-          `  换个端口：设置 MOCK_STUDIO_PORT，并把扩展设置页里的端口改成一样的。`,
-      );
-    } else {
-      log(`WebSocket 服务启动失败：${err.message}`);
-    }
+    log((e as Error).message);
     process.exit(1);
   }
-  log(`WebSocket 已监听 127.0.0.1:${port}，等待扩展连接…`);
 
   const server = new McpServer(
     { name: 'mock-studio', version: VERSION },
     {
+      /**
+       * 这段会在客户端连上时注入 AI 的上下文 —— **它取代了「给每个 agent 装 skill」**。
+       *
+       * 所以这里要写的不是「有哪些工具」（工具列表本来就自带描述），
+       * 而是**什么时候该想起用它们**、以及**顺序**。
+       * 触发词写得越具体，AI 越不容易在用户说「页面没数据」时
+       * 跑去读代码猜接口，而不是直接看浏览器里真实发生了什么。
+       */
       instructions:
-        'Mock Studio 让你直接操作用户浏览器里的接口 mock。\n' +
-        '用户说「页面没数据」「帮我 mock 一下这个接口」时：\n' +
-        '1. 先 list_recent_requests（only_unmocked: true）看页面实际在请求什么 —— 不要让用户手抄 URL\n' +
-        '2. 需要真实数据结构就 get_request_detail\n' +
-        '3. 再 create_mock。接口本来不存在就用 kind: "virtual"\n' +
-        '4. 告诉用户刷新页面（已经发出去的请求不会重来）\n' +
-        '注意：请求记录里的 token/cookie 已被强制打码，redacted 为 true 表示你看到的不是全貌。',
+        'Mock Studio 让你直接读写用户 Chrome 里的接口 mock，并能看到页面**实际发出**的请求。\n\n' +
+        '【什么时候用】用户说这些话时，先用本工具集，不要去翻代码猜接口：\n' +
+        '  「页面没数据 / 接口报错 / 这个接口挂了 / 帮我 mock 一下 / 造点假数据 /\n' +
+        '   我要看空状态 / 测一下报错 / 后端还没做这个接口 / 翻页数据不变」\n\n' +
+        '【标准顺序】\n' +
+        '1. list_recent_requests（only_unmocked: true）—— 看页面到底在请求什么。\n' +
+        '   **不要让用户手抄 URL**，这是本工具集最大的价值\n' +
+        '2. get_request_detail —— 需要对齐真实字段结构时\n' +
+        '3. create_mock —— 接口本来不存在用 kind:"virtual"；\n' +
+        '   要一批像真的数据用 body_type:"mockjs"；要随参数变用 "dynamic"\n' +
+        '4. **告诉用户刷新页面** —— 已经发出去的请求不会重来\n\n' +
+        '【常见需求对应哪个工具】\n' +
+        '  测空态/报错/超时 → create_mock 传多个 variants，或 add_variant，再 set_active_variant 切\n' +
+        '  模拟超时/断网 → behavior: "timeout" / "networkError"\n' +
+        '  改已有 mock → update_mock（是覆盖）；想保留原数据则用 add_variant\n' +
+        '  mock 没生效 → get_status 看总开关，list_rules 看规则是否被遮蔽\n\n' +
+        '【要知道的边界】\n' +
+        '  · 请求记录里的 token/cookie/邮箱/手机号已被强制打码，\n' +
+        '    redacted 为 true 表示这条你看到的不是全貌\n' +
+        '  · 建规则后会自动做冲突检测，返回里的 ⚠️ 要转达给用户，别忽略',
     },
   );
 
   registerTools(server, bridge);
+  registerPrompts(server);
 
   await server.connect(new StdioServerTransport());
-  log('MCP 已就绪');
+  log(`MCP 已就绪（角色：${bridge.role}）`);
 
   const shutdown = async () => {
-    await bridge.stop();
+    // 干净退出很重要：Hub 退出时要主动关掉 peer 连接，
+    // 让它们立刻重新选举，而不是等 TCP 超时
+    await bridge.close().catch(() => undefined);
     process.exit(0);
   };
   process.on('SIGINT', shutdown);
