@@ -7,6 +7,24 @@ description: 为 Mock Studio 浏览器扩展生成 mock 规则 JSON。当用户�
 
 > 对应 Schema v2。核心变化：一条规则持有**多个变体**，同一时刻生效一个。
 
+## ⚠️ 先检查有没有 MCP
+
+**如果当前会话里有 `mock-studio` 这组 MCP 工具**（`list_recent_requests`、
+`create_mock` 等），**优先用它们，不要用本 Skill 生成 JSON**。
+
+原因：MCP 能直接看到页面**实际发出的请求**，并把规则直接写进扩展 ——
+不用用户手抄 URL，也不用复制粘贴。本 Skill 是没有 MCP 时的降级路径。
+
+有 MCP 时的正确姿势：
+
+```
+list_recent_requests(only_unmocked: true)   ← 先看页面缺什么，别问用户要 URL
+get_request_detail(id)                       ← 要对齐真实数据结构时
+create_mock(...)                             ← 直接写进去
+```
+
+接入方式见 `docs/12-MCP-Server.md`。以下内容仅在**没有** MCP 时适用。
+
 ## 工作流程
 
 1. 弄清两件事：
@@ -90,9 +108,83 @@ description: 为 Mock Studio 浏览器扩展生成 mock 规则 JSON。当用户�
 | `match.methods` | 空数组 `[]` = 匹配所有方法 |
 | `match.hosts` | 空数组 = 不限。**规则挂在项目下时留空** —— 项目已经绑定域名了 |
 | `projectId` / `groupId` | 不知道就填 `null`，用户可以在界面上拖进去 |
-| `bodyType` | 目前只支持 `"static"` |
+| `bodyType` | `"static"`（body 是 JSON）/ `"mockjs"`（body 是数据模板）/ `"dynamic"`（body 是 JS 源码）。三者见下 |
 | `delayMs` | 模拟慢网络，默认 0 |
 | `behavior` | `"normal"`（默认）/ `"timeout"`（请求挂起）/ `"networkError"`（网络错误） |
+
+## 三种响应体怎么选
+
+| 需求 | bodyType |
+| --- | --- |
+| 数据固定不变 | `static` —— **默认选它**，可读性最好 |
+| 要一批看起来像真的数据（列表、假名字假价格） | `mockjs` |
+| 几份固定数据来回切 | 还是 `static`，但建**多个变体** |
+| 响应要随请求参数变（翻页、查详情、搜索） | `dynamic` |
+
+不确定时选 `static`。用户看得懂的固定 JSON，比一个要读两遍才明白的模板有用。
+
+## Mock 模板（`bodyType: "mockjs"`）
+
+`body` 存一份**带规则的 JSON 字符串**：
+
+```json
+{
+  "status": 200, "headers": {}, "bodyType": "mockjs",
+  "shellTemplateId": null, "delayMs": 0,
+  "body": "{\"list|10\":[{\"id|+1\":1001,\"name\":\"@ctitle(2,4)\",\"price|10-999.2\":1,\"status\":\"@pick(待付款,已发货,已完成)\"}],\"total|40-60\":1}"
+}
+```
+
+键上的规则：
+
+| 写法 | 效果 |
+| --- | --- |
+| `"list\|10"` + 数组值 | 重复 10 次 |
+| `"list\|1-5"` + 数组值 | 重复随机 1~5 次 |
+| `"id\|+1"` + 数字值 | 逐项递增（首项用写的初值） |
+| `"age\|18-60"` + 数字值 | 范围内随机整数 |
+| `"price\|10-99.2"` + 数字值 | 范围内随机浮点，2 位小数 |
+| `"ok\|1"` + 布尔值 | 随机真假 |
+
+常用占位符：`@cname` `@ctitle(n,m)` `@cword` `@city` `@province` ·
+`@name` `@title` `@word` · `@natural(min,max)` `@integer` `@float` `@id` `@guid` `@increment` ·
+`@email` `@url` `@ip` `@phone` · `@date` `@datetime` `@now` `@timestamp` ·
+`@boolean` `@color` `@string` · `@pick(a,b,c)` `@range(a,b)`
+
+注意：
+
+- **模板必须是合法 JSON**（记得转义引号）
+- 整个值就是一个占位符时**保留原始类型**：`"id": "@natural"` 得到数字，不是字符串
+- **枚举字段用 `@pick`**，别用 `@string`
+- 单数组上限 1000 项；没实现正则生成、函数模板、`Mock.Random.extend`
+- 完整语法见 `docs/11-Mock模板语法.md`
+
+## 动态响应（`bodyType: "dynamic"`）
+
+需要「响应随请求参数变化」时用 —— 翻页、按 id 查详情、搜索。
+此时 `body` 存的是**一段 JS 源码字符串**，不是 JSON：
+
+```json
+{
+  "status": 200, "headers": {}, "bodyType": "dynamic",
+  "shellTemplateId": null, "delayMs": 0,
+  "body": "(req) => ({ list: Array.from({ length: Number(req.query.size) || 10 }, (_, i) => ({ id: (Number(req.query.page) - 1) * 10 + i + 1 })), total: 48 })"
+}
+```
+
+写的时候注意：
+
+| 事项 | 说明 |
+| --- | --- |
+| 两种写法都行 | `(req) => ({...})` 表达式，或直接 `return {...};` 函数体 |
+| `req` 有什么 | `url` · `method` · `host` · `path` · `query` |
+| `query` 的值是**字符串** | URL 里没有类型。要算数就 `Number(req.query.page)` |
+| 不能返回 Promise | XHR 的 `send()` 是同步的，等不了异步结果 |
+| 不能用 `fetch` / `setTimeout` 等异步 | 同上。要延迟用 `delayMs` 字段 |
+| 保持简短 | 每个匹配到的请求都会执行一次，超过 50ms 会被标记为「偏慢」 |
+
+**什么时候【不要】用动态**：数据固定不变时用 `static`，可读性好得多。
+「几份固定数据来回切」用**变体**，不要用 `if` 在动态代码里分支。
 
 ## 响应外壳
 

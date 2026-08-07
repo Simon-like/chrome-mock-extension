@@ -1,0 +1,25 @@
+{
+  "name": "mock-studio-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Mock Studio 的 MCP Server —— 让 AI 看到页面实际发了哪些请求，并直接写 mock 规则",
+  "bin": {
+    "mock-studio-mcp": "./dist/mcp-server/src/index.js"
+  },
+  "//": "dist 里多一层 mcp-server/src，是因为 tsconfig 的 rootDir 设成了上级目录 —— 本包直接编译 ../src/core 的源码来复用业务逻辑（A1 的兑现），不走 npm 包依赖。",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "start": "node dist/mcp-server/src/index.js",
+    "e2e": "npm run build && node e2e.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "ws": "^8.18.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.12"
+  }
+}

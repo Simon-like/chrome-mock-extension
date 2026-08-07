@@ -13,6 +13,8 @@
 import { findMatchingRule } from '@core/engine/matcher.js';
 import { normalizeRequest } from '@core/engine/normalize.js';
 import { buildResponse } from '@core/engine/responder.js';
+import { createBodyGenRuntime } from '@core/engine/bodygen.js';
+import { probeEvalSupport, type EvalSupport } from '@core/engine/dynamic.js';
 import type { EngineSnapshot, CapturedRequest } from '@shared/messages.js';
 import { PAGE_CHANNEL } from '@shared/messages.js';
 import type { MockResponse, MockStore, RequestInfo, Rule } from '@core/types.js';
@@ -39,6 +41,14 @@ const originalSetRequestHeader = XhrProto.setRequestHeader;
 let observedCount = 0;
 let mockedCount = 0;
 
+/**
+ * 动态响应运行时（编译缓存 + 熔断），一个页面一份。
+ *
+ * 由宿主持有而不是用 responder 里的默认单例 —— 因为熔断需要在
+ * 「用户改完规则」时清零，那个时机只有宿主知道（见下面的快照监听）。
+ */
+const bodyGenRuntime = createBodyGenRuntime();
+
 // ═══════════════════════════════════════════════════════════
 // 与 ISOLATED world 通信
 // ═══════════════════════════════════════════════════════════
@@ -59,6 +69,11 @@ window.addEventListener('message', (event: MessageEvent) => {
   if (data.type !== 'RULES_SNAPSHOT' || !data.snapshot) return;
 
   snapshot = data.snapshot;
+
+  // 新快照 = 用户刚改了什么。给被熔断的动态规则一次重新执行的机会 ——
+  // 否则用户改完 JS 保存了，页面却还在返回「已熔断」，只能刷页面，很费解。
+  // 编译缓存不用清：它以源码为键，改一个字符就是新条目
+  bodyGenRuntime.reset();
 });
 
 function reportEvent(entry: CapturedRequest): void {
@@ -126,7 +141,29 @@ function makeMockResponse(rule: Rule, req: RequestInfo): MockResponse {
     groups: snapshot?.groups ?? [],
     projects: snapshot?.projects ?? [],
   } as MockStore;
-  return buildResponse(pseudoStore, rule, req);
+  const mock = buildResponse(pseudoStore, rule, req, bodyGenRuntime);
+  warnOnBodyGenFailure(rule, mock);
+  return mock;
+}
+
+/**
+ * 响应体没生成出来，在页面控制台喊一声 —— 用户多半正盯着控制台调页面，
+ * 比让他自己想起来去开 DevTools 面板快得多。
+ *
+ * 只在【第一次】喊。一个翻页列表一秒能发十几个请求，每次都 warn 会把控制台冲垮，
+ * 反而盖住用户自己的日志。firstFailure 由 runtime 判定。
+ */
+function warnOnBodyGenFailure(rule: Rule, mock: MockResponse): void {
+  if (!mock.bodyGen || mock.bodyGen.ok || !mock.bodyGen.firstFailure) return;
+  const what = mock.bodyGen.kind === 'mockjs' ? 'Mock 模板展开' : '动态响应执行';
+  try {
+    console.warn(
+      `[Mock Studio] 规则「${rule.name}」的${what}失败：${mock.bodyGen.error}\n` +
+        '已返回错误载荷（__mockStudioError__），请在扩展里修正。',
+    );
+  } catch {
+    /* 页面可能改了 console，绝不能因此影响请求 */
+  }
 }
 
 const MAX_CAPTURE_BODY = 256 * 1024;
@@ -200,6 +237,7 @@ function hookFetch(): void {
         ruleName: rule.name,
         status: mock.status,
         body: mock.body,
+        bodyGen: mock.bodyGen,
       }),
     );
 
@@ -326,6 +364,7 @@ function hookXhr(): void {
         ruleName: rule.name,
         status: mock.status,
         body: mock.body,
+        bodyGen: mock.bodyGen,
       }),
     );
 
@@ -425,6 +464,24 @@ function attachCaptureListener(xhr: XMLHttpRequest, meta: XhrMeta): void {
   });
 }
 
+// ═══════════════════════════════════════════════════════════
+// 动态响应可行性探测（Spike，见 docs/10-动态响应Spike.md）
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * 探测结果缓存。一个页面的 CSP 不会中途变，测一次就够。
+ *
+ * ⚠️ 刻意【不在启动时探测】：被 CSP 拦下会派发 securitypolicyviolation，
+ * 站点配了 report-uri 的话，我们就往人家监控里灌脏数据了。
+ * 只在用户显式点探测、或将来真要执行 dynamic 规则时才跑。
+ */
+let evalSupport: EvalSupport | null = null;
+
+function getEvalSupport(): EvalSupport {
+  if (!evalSupport) evalSupport = probeEvalSupport();
+  return evalSupport;
+}
+
 function statusTextOf(status: number): string {
   const map: Record<number, string> = {
     200: 'OK',
@@ -469,6 +526,14 @@ Object.defineProperty(window, '__MOCK_STUDIO__', {
     },
     get missedBeforeReady() {
       return [...missedBeforeReady];
+    },
+    /**
+     * 动态响应能否在本站点落地。
+     * 是个【方法】而不是 getter —— 调用有副作用（可能触发 CSP 上报），
+     * 写成 getter 的话在控制台展开 __MOCK_STUDIO__ 就会被无意触发。
+     */
+    probeDynamicSupport() {
+      return getEvalSupport();
     },
   },
   configurable: true,

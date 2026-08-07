@@ -210,6 +210,90 @@ select {
   cursor: pointer;
 }
 
+/* ── 开关 ─────────────────────────────────────────────
+   见 Switch.tsx 顶部注释：开关表达「状态」，复选框表达「选择」。
+   两者形态必须一眼可分，所以这里刻意做成圆角胶囊 + 滑块，
+   不复用任何 checkbox 的视觉。 */
+
+.switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 28px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-hover);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+  cursor: pointer;
+  transition: background 0.16s, border-color 0.16s;
+}
+/* 只动边框，不动背景 —— 背景是「开/关/部分」三态的载体，hover 不能覆盖它 */
+.switch:hover:not(:disabled) {
+  border-color: var(--faint);
+}
+.switch.is-on:hover:not(:disabled),
+.switch.is-partial:hover:not(:disabled) {
+  border-color: var(--accent-line);
+  filter: brightness(1.08);
+}
+.switch:active:not(:disabled) {
+  transform: none;
+}
+.switch__knob {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--faint);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.2);
+  transition: transform 0.16s cubic-bezier(0.4, 0, 0.2, 1), background 0.16s;
+}
+.switch.is-on {
+  background: var(--accent);
+  border-color: transparent;
+}
+.switch.is-on .switch__knob {
+  background: #fff;
+  transform: translateX(12px);
+}
+/* 部分启用：滑块停中间，轨道用弱化的强调色 —— 一眼看出「不是全开也不是全关」 */
+.switch.is-partial {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
+.switch.is-partial .switch__knob {
+  background: var(--accent);
+  transform: translateX(6px);
+}
+.switch:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.switch:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.switch--sm {
+  width: 24px;
+  height: 14px;
+}
+.switch--sm .switch__knob {
+  width: 10px;
+  height: 10px;
+}
+.switch--sm.is-on .switch__knob {
+  transform: translateX(10px);
+}
+.switch--sm.is-partial .switch__knob {
+  transform: translateX(5px);
+}
+
 label {
   display: block;
   font-size: 11px;
@@ -284,6 +368,11 @@ label {
 .tag-mock {
   background: var(--ok-soft);
   color: var(--ok);
+}
+/* 动态响应执行失败 —— 比 MOCK 的成功色更紧急 */
+.tag-dynfail {
+  background: var(--bad-soft);
+  color: var(--bad);
 }
 
 /* ── 卡片 / 分区 ───────────────────────────────────── */
@@ -757,6 +846,30 @@ button.danger-solid:hover:not(:disabled) {
   border-radius: 14px;
   box-shadow: var(--shadow-lg);
 }
+/* MCP 设置里要放一整段可复制的 JSON 配置，460px 会把它挤成面条 */
+.modal--wide {
+  width: min(620px, 92vw);
+}
+/* 弹层里的分节线。比再套一层卡片轻，层级也不会多一级 */
+.modal__sep {
+  height: 1px;
+  background: var(--border-strong);
+  margin: 16px 0 14px;
+}
+/* 可整段复制的代码块 */
+.codeblock {
+  margin: 0;
+  padding: 9px 11px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  line-height: 1.6;
+  /* 配置路径很长，横向滚动比换行更好读 —— 换行会把 JSON 结构打乱 */
+  overflow-x: auto;
+  white-space: pre;
+}
+
 .modal__head {
   display: flex;
   align-items: center;
@@ -1168,7 +1281,39 @@ button.danger-solid:hover:not(:disabled) {
   line-height: 1.4;
 }
 
-/* ── 批量操作条 ────────────────────────────────────── */
+/* ── 响应体类型切换（静态 JSON / 动态 JS）────────────── */
+
+.bodytype {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 5px;
+}
+.bodytype button {
+  padding: 3px 10px;
+  font-size: 11px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+.bodytype button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--fg);
+}
+.bodytype .bodytype__on {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent);
+  font-weight: 600;
+}
+.bodytype code {
+  font-size: 10px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--surface-hover);
+}
+
+/* ── 选择态操作条 ──────────────────────────────────── */
 
 .bulkbar {
   display: flex;
@@ -1187,14 +1332,36 @@ button.danger-solid:hover:not(:disabled) {
   color: var(--accent);
   font-variant-numeric: tabular-nums;
 }
+/* 一条都没选时，操作条里全是禁用按钮，用提示把注意力引回列表 */
+.bulkbar__hint {
+  font-size: 11px;
+  color: var(--muted);
+}
 
-/* 批量模式下选中的规则行 */
+/* 选择态下选中的规则行 */
 .rule-item--checked {
   background: var(--accent-soft) !important;
   box-shadow: inset 2px 0 0 var(--accent);
 }
+/* 复选框和它替代的把手占同样宽度，切换选择态时整行不会横向跳动 */
+.rule-item__pick,
+.rule-item__grip {
+  width: 13px;
+  text-align: center;
+}
 .rule-item__pick {
-  margin: 0 1px;
+  margin: 0;
+  pointer-events: none; /* 点击统一由整行的 onClick 处理，避免 shift 范围选择走两条路径 */
+}
+.group__pick {
+  margin: 0;
+}
+/* 选择态下整行都是点选热区，光标要跟上 */
+.rule-item--pickable {
+  cursor: pointer;
+}
+.rule-item--pickable * {
+  user-select: none;
 }
 
 /* ── 拖拽中的规则 ──────────────────────────────────── */
@@ -1263,6 +1430,11 @@ button.danger-solid:hover:not(:disabled) {
 }
 .req-row.mocked {
   background: var(--ok-soft);
+}
+/* 写在 .mocked 之后：动态响应算错了，红要压过「命中成功」的绿 */
+.req-row--dynfail {
+  background: var(--bad-soft);
+  box-shadow: inset 2px 0 0 var(--bad);
 }
 .req-row.selected {
   background: var(--accent-soft);

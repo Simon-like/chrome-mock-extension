@@ -274,7 +274,15 @@ function EntryRow({
   onConvert: () => void;
   onSelect: () => void;
 }) {
-  const cls = ['req-row', entry.mocked && 'mocked', selected && 'selected']
+  // 响应体没生成出来时必须压过 mocked 的绿底 —— 「Mock 生效了」和「Mock 算错了」
+  // 是两件事，后者更紧急，不能被前者的成功色盖住
+  const genBad = entry.bodyGen && !entry.bodyGen.ok;
+  const cls = [
+    'req-row',
+    entry.mocked && 'mocked',
+    genBad && 'req-row--dynfail',
+    selected && 'selected',
+  ]
     .filter(Boolean)
     .join(' ');
 
@@ -282,7 +290,13 @@ function EntryRow({
     <div className={cls} onClick={onSelect}>
       {/* 被 Mock 的请求要一眼能认出来 —— 这是本面板存在的理由 */}
       <span style={{ width: 42, flexShrink: 0 }}>
-        {entry.mocked && <span className="tag tag-mock">MOCK</span>}
+        {genBad ? (
+          <span className="tag tag-dynfail" title={entry.bodyGen?.error}>
+            {entry.bodyGen?.kind === 'mockjs' ? '模板错' : 'JS 错'}
+          </span>
+        ) : (
+          entry.mocked && <span className="tag tag-mock">MOCK</span>
+        )}
       </span>
 
       <span className="faint mono" style={{ width: 44, flexShrink: 0 }}>
@@ -368,6 +382,27 @@ function DetailPane({
       <KV k="状态" v={String(entry.status ?? '—')} />
       <KV k="来源" v={entry.api === 'xhr' ? 'XMLHttpRequest' : 'fetch'} />
       {entry.mocked && entry.ruleName && <KV k="命中规则" v={entry.ruleName} />}
+
+      {entry.bodyGen && (
+        <div style={{ marginTop: 8 }}>
+          <label>{entry.bodyGen.kind === 'mockjs' ? 'Mock 模板' : '动态响应'}</label>
+          {entry.bodyGen.ok ? (
+            <div className={entry.bodyGen.slow ? 'warn' : 'ok'} style={{ fontSize: 11 }}>
+              ✓ 生成成功 · {entry.bodyGen.durationMs.toFixed(1)}ms
+              {entry.bodyGen.slow && ' —— 偏慢，翻页高频调用时可能拖慢页面'}
+            </div>
+          ) : (
+            <div className="banner banner-bad" style={{ fontSize: 11, lineHeight: 1.5 }}>
+              ✗ {entry.bodyGen.error}
+              {entry.bodyGen.tripped && (
+                <div style={{ marginTop: 4 }} className="muted">
+                  已熔断，暂停执行。改完保存后会自动恢复。
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={{ marginTop: 10 }}>
         <label>响应体{entry.truncated && '（已截断）'}</label>

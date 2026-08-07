@@ -10,6 +10,7 @@ import {
   materializeRule,
 } from '../src/core/store/defaults.js';
 import { normalizeRequest } from '../src/core/engine/normalize.js';
+import { createBodyGenRuntime } from '../src/core/engine/bodygen.js';
 import type { ResponseSpec, RuleDraft } from '../src/core/types.js';
 
 const req = normalizeRequest('/api/x', 'GET', 'https://a.com/');
@@ -59,6 +60,75 @@ describe('buildResponse', () => {
   it('shellTemplateId 指向不存在的模板时不套壳，不崩溃', () => {
     const rule = ruleOf({ body: '{"a":1}', shellTemplateId: 'nope' });
     expect(buildResponse(store, rule, req).body).toBe('{"a":1}');
+  });
+});
+
+describe('buildResponse · 生成式响应体', () => {
+  const store = createDefaultStore();
+  const listReq = normalizeRequest('/api/list?page=3&size=2', 'GET', 'https://a.com/');
+
+  /** 每个用例给一个干净的 runtime，避免熔断状态串味 */
+  const rt = () => createBodyGenRuntime();
+
+  it('bodyType 为 dynamic 时按请求参数现算 —— 这是整个功能的存在理由', () => {
+    const rule = ruleOf({
+      bodyType: 'dynamic',
+      body: '(req) => ({ page: Number(req.query.page), size: Number(req.query.size) })',
+    });
+    const res = buildResponse(store, rule, listReq, rt());
+    expect(JSON.parse(res.body)).toEqual({ page: 3, size: 2 });
+    expect(res.bodyGen?.ok).toBe(true);
+  });
+
+  it('同一条规则、不同请求参数会得到不同结果（静态响应做不到）', () => {
+    const rule = ruleOf({ bodyType: 'dynamic', body: '(req) => ({ p: req.query.page })' });
+    const runtime = rt();
+    const p1 = normalizeRequest('/api/list?page=1', 'GET', 'https://a.com/');
+    const p2 = normalizeRequest('/api/list?page=2', 'GET', 'https://a.com/');
+    expect(buildResponse(store, rule, p1, runtime).body).toBe('{"p":"1"}');
+    expect(buildResponse(store, rule, p2, runtime).body).toBe('{"p":"2"}');
+  });
+
+  it('动态结果照样套响应外壳 —— JS 生成 data，外壳补公司格式', () => {
+    const rule = ruleOf({
+      bodyType: 'dynamic',
+      body: '(req) => [1, 2]',
+      shellTemplateId: 'shell-status-message-data',
+    });
+    const res = buildResponse(store, rule, listReq, rt());
+    expect(res.body).toBe('{"status":0,"message":"ok","data":[1,2]}');
+  });
+
+  it('执行失败时给出错误载荷并标记 bodyGen.ok=false，不静默返回空对象', () => {
+    const rule = ruleOf({ bodyType: 'dynamic', body: '(req) => { throw new Error("炸了"); }' });
+    const res = buildResponse(store, rule, listReq, rt());
+    expect(res.bodyGen?.ok).toBe(false);
+    expect(JSON.parse(res.body).__mockStudioError__).toContain('炸了');
+  });
+
+  it('静态响应不带 bodyGen 字段，请求面板据此判断要不要显示诊断', () => {
+    const rule = ruleOf({ body: '{"a":1}' });
+    expect(buildResponse(store, rule, req).bodyGen).toBeUndefined();
+  });
+
+  it('熔断按「规则 + 变体」隔离：一个变体写错不影响另一个', () => {
+    const draft: Partial<RuleDraft> = {
+      variants: [
+        { name: '好的', response: createResponseSpec({ bodyType: 'dynamic', body: '(req) => ({ ok: 1 })' }) },
+        { name: '坏的', response: createResponseSpec({ bodyType: 'dynamic', body: '(req) => { throw 1; }' }) },
+      ],
+    };
+    const rule = materializeRule(createRuleDraft(draft), () => `rv${++seq}`, 1);
+    const runtime = rt();
+
+    // 先把「坏的」变体打到熔断
+    const broken = { ...rule, activeVariantId: rule.variants[1]!.id };
+    for (let i = 0; i < 5; i++) buildResponse(store, broken, listReq, runtime);
+    expect(buildResponse(store, broken, listReq, runtime).bodyGen?.tripped).toBe(true);
+
+    // 「好的」变体不受影响
+    const good = { ...rule, activeVariantId: rule.variants[0]!.id };
+    expect(buildResponse(store, good, listReq, runtime).bodyGen?.ok).toBe(true);
   });
 });
 

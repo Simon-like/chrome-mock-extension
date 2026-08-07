@@ -127,6 +127,33 @@ describe('结构自愈', () => {
     expect(store.settings.pageSize).toBe(15);
   });
 
+  /**
+   * 真实风险：老用户的 store 里根本没有 mcp* 这些字段。
+   * 补不齐的话 mcpPort 会是 undefined，桥连一个 `ws://127.0.0.1:undefined`，
+   * 报错还很难看懂。
+   */
+  it('老 store 缺 MCP 设置时补齐默认值', () => {
+    const { store } = migrate({
+      schemaVersion: 2,
+      rules: [],
+      settings: { captureEnabled: true },
+    });
+    expect(store.settings.mcpEnabled).toBe(false); // 默认关：开 localhost 连接得用户自己决定
+    expect(store.settings.mcpPort).toBe(8787);
+    expect(store.settings.mcpToken).toBe('');
+  });
+
+  it('已有的 MCP 设置不被默认值覆盖', () => {
+    const { store } = migrate({
+      schemaVersion: 2,
+      rules: [],
+      settings: { mcpEnabled: true, mcpPort: 9999, mcpToken: 'abc123' },
+    });
+    expect(store.settings.mcpEnabled).toBe(true);
+    expect(store.settings.mcpPort).toBe(9999);
+    expect(store.settings.mcpToken).toBe('abc123');
+  });
+
   it('变体为空数组时补一个默认变体 —— 空变体的规则是无效状态', () => {
     const { store } = migrate(
       {

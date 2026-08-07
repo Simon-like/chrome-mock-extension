@@ -6,20 +6,29 @@
  *   - 分组：业务模块归类，纯粹的容器（主区标题）
  *   - 规则：列表顺序即匹配优先级（先到先得）
  *   - 变体：同一接口的多份响应，在规则行上直接切换（不属于容器层级）
+ *
+ * 规则行上的控件语义（三种形态，互不重复）：
+ *   ⠿  把手   = 拖动改归属      （默认态）
+ *   ☑  复选框 = 选中这一行      （选择态，占把手的槽位）
+ *   ●— 开关   = 这条规则开着吗  （两种状态都在，始终可点）
+ * 早期启用/停用也用 checkbox，一进批量模式一行就出现两个方框，
+ * 只能把其中一个禁用来消歧 —— 现在换成开关，形态本身就区分开了。
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { findShadowedRules } from '@core/store/validate.js';
 import { createRuleDraft, getActiveVariant } from '@core/store/defaults.js';
 import type { Group, Rule, RuleDraft } from '@core/types.js';
 import { useStore } from '@ui/useStore.js';
 import { Splitter, useResizable } from '@ui/Splitter.js';
 import { VariantSwitcher } from '@ui/VariantSwitcher.js';
+import { Switch } from '@ui/Switch.js';
 import { RuleEditor } from './RuleEditor.js';
 import { GroupSection } from './GroupSection.js';
 import { GearIcon, ProjectSidebar } from './ProjectSidebar.js';
 import { ConfirmDelete, type DeleteMode } from '@ui/ConfirmDelete.js';
 import { ProjectSettings } from './ProjectSettings.js';
+import { McpSettings } from './McpSettings.js';
 
 const EDITOR_DEFAULT_WIDTH = 560;
 const DRAG_MIME = 'application/x-mockstudio-rule';
@@ -30,6 +39,7 @@ export function Options() {
   const { store, loading, error, run } = useStore();
   const [editing, setEditing] = useState<Editing>(null);
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
+  const [mcpOpen, setMcpOpen] = useState(false);
   /** 待确认删除的对象。删容器是不可逆操作，必须让用户明确选内容怎么办 */
   const [deleting, setDeleting] = useState<
     | { kind: 'group'; id: string }
@@ -44,11 +54,20 @@ export function Options() {
   const [ungroupedCollapsed, setUngroupedCollapsed] = useState(false);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   /**
-   * 批量选择。用独立的「模式」而不是常驻复选框 ——
-   * 规则行上已经有一个「启用」复选框了，再加一个会让人分不清点的是哪个。
-   * null 表示不在批量模式。
+   * 选择态。null = 不在选择态（列表显示拖拽把手），Set = 在选择态（显示复选框）。
+   *
+   * 为什么仍然保留「态」而不是常驻复选框：
+   *   常驻复选框会让每一行多一个平时用不到的控件，列表越长噪音越大；
+   *   而且把手和复选框都要占最左槽位，常驻就没地方放把手了 ——
+   *   拖拽归组是默认态的高频操作，不能为了低频的批量把它挤掉。
+   *
+   * 两个入口：工具栏「选择」按钮（显式、可发现），或在任意规则行上
+   * Cmd/Ctrl+点击（隐式、零成本，习惯了文件管理器的人会直接试）。
+   * 退出：Esc、「完成」按钮，或清空选择后再点一次「选择」。
    */
   const [selection, setSelection] = useState<Set<string> | null>(null);
+  /** Shift 范围选择的锚点 —— 上一次单独点选的行 */
+  const [anchorId, setAnchorId] = useState<string | null>(null);
 
   const editorPane = useResizable({
     storageKey: 'mockstudio.options.editorWidth',
@@ -75,6 +94,34 @@ export function Options() {
     );
   }, [scopedRules, keyword]);
 
+  /**
+   * 列表里从上到下的规则顺序 —— Shift 范围选择要按「看到的顺序」算，
+   * 而不是 store.rules 的顺序（分组把它打散了）。
+   */
+  const visibleOrder = useMemo(() => {
+    if (!store) return [] as string[];
+    const groupIds = store.groups
+      .filter((g) => g.projectId === store.activeProjectId)
+      .map((g) => g.id as string | null);
+    // 渲染顺序：各分组在前，「未分组」垫底（与下方 renderGroup 的调用顺序一致）
+    return [...groupIds, null].flatMap((gid) =>
+      searched.filter((r) => r.groupId === gid).map((r) => r.id),
+    );
+  }, [store, searched]);
+
+  // Esc 退出选择态。放在这里而不是行上 —— 焦点可能在任何地方
+  useEffect(() => {
+    if (selection === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelection(null);
+        setAnchorId(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selection]);
+
   if (loading) return <div style={{ padding: 28 }} className="muted">加载中…</div>;
   if (error || !store) {
     return (
@@ -92,19 +139,40 @@ export function Options() {
   const inSelectMode = selection !== null;
   const selectedIds = selection ? [...selection] : [];
 
-  const toggleSelect = (id: string) =>
-    setSelection((cur) => {
-      const next = new Set(cur ?? []);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-
   const selectMany = (ids: string[], on: boolean) =>
     setSelection((cur) => {
       const next = new Set(cur ?? []);
       for (const id of ids) (on ? next.add(id) : next.delete(id));
       return next;
     });
+
+  const exitSelect = () => {
+    setSelection(null);
+    setAnchorId(null);
+  };
+
+  /**
+   * 点选一行。Shift 表示「从锚点到这里全选」—— 和文件管理器一致。
+   * 锚点只在非 Shift 的点击时更新，这样连续 Shift 点击是在同一个锚点上改范围，
+   * 而不是每点一次就把范围截断重来。
+   */
+  const pickRule = (id: string, shift: boolean) => {
+    if (shift && anchorId && anchorId !== id) {
+      const a = visibleOrder.indexOf(anchorId);
+      const b = visibleOrder.indexOf(id);
+      if (a >= 0 && b >= 0) {
+        const range = visibleOrder.slice(Math.min(a, b), Math.max(a, b) + 1);
+        selectMany(range, true);
+        return;
+      }
+    }
+    setAnchorId(id);
+    setSelection((cur) => {
+      const next = new Set(cur ?? []);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
 
   const activeProject = store.projects.find((p) => p.id === store.activeProjectId) ?? null;
   const groupsInScope = store.groups.filter((g) => g.projectId === store.activeProjectId);
@@ -204,7 +272,7 @@ export function Options() {
         selected={editing?.mode === 'edit' && editing.ruleId === rule.id}
         selectMode={inSelectMode}
         checked={selection?.has(rule.id) ?? false}
-        onCheck={() => toggleSelect(rule.id)}
+        onPick={(shift) => pickRule(rule.id, shift)}
         dragging={draggingId === rule.id}
         onDragStart={(e) => {
           e.dataTransfer.setData(DRAG_MIME, rule.id);
@@ -247,6 +315,9 @@ export function Options() {
         group={group}
         rules={rules}
         collapsed={group ? group.collapsed : ungroupedCollapsed}
+        selectMode={inSelectMode}
+        selectedCount={selection ? rules.filter((r) => selection.has(r.id)).length : 0}
+        onSelectAll={(on) => selectMany(rules.map((r) => r.id), on)}
         dropActive={dropTarget === key}
         onDragOver={(e) => allowDrop(e, key)}
         onDragLeave={() => setDropTarget((t) => (t === key ? null : t))}
@@ -346,13 +417,24 @@ export function Options() {
           />
           <button
             className={inSelectMode ? 'primary' : ''}
-            onClick={() => setSelection(inSelectMode ? null : new Set())}
+            onClick={() => (inSelectMode ? exitSelect() : setSelection(new Set()))}
             disabled={scopedRules.length === 0}
-            title="进入批量选择，可一次删除或移动多条规则"
+            title={
+              inSelectMode
+                ? '退出选择（Esc）'
+                : '选中多条规则后可一次启停、移动或删除。也可在规则行上 Cmd/Ctrl+点击直接进入'
+            }
           >
-            {inSelectMode ? '退出批量' : '批量'}
+            {inSelectMode ? '完成选择' : '选择'}
           </button>
           <span className="grow" />
+          <button
+            className={store.settings.mcpEnabled ? 'primary' : 'ghost'}
+            onClick={() => setMcpOpen(true)}
+            title="让 Claude Code / Cursor 里的 AI 直接看请求、写规则"
+          >
+            MCP{store.settings.mcpEnabled ? ' · 开' : ''}
+          </button>
           <button className="ghost" onClick={importFromClipboard} title="粘贴 AI 生成的规则 JSON">
             剪贴板导入
           </button>
@@ -367,7 +449,8 @@ export function Options() {
           </div>
         )}
 
-        {/* 批量操作条。选中数为 0 时也显示，否则用户会以为批量模式没生效 */}
+        {/* 选择操作条。选中数为 0 时也显示，否则用户会以为「选择」没生效。
+            0 条时不给禁用按钮的海洋看，只留一行提示 —— 见下方 selectedIds.length === 0 分支 */}
         {inSelectMode && (
           <div className="bulkbar">
             <label className="row" style={{ gap: 6, margin: 0, cursor: 'pointer' }}>
@@ -385,6 +468,12 @@ export function Options() {
                 已选 <b>{selectedIds.length}</b> / {searched.length} 条
               </span>
             </label>
+
+            {selectedIds.length === 0 && (
+              <span className="bulkbar__hint">
+                勾选左侧复选框选中规则 · Shift 点击可选一段 · Esc 退出
+              </span>
+            )}
 
             <span className="grow" />
 
@@ -436,7 +525,7 @@ export function Options() {
             >
               删除
             </button>
-            <button className="ghost" onClick={() => setSelection(null)}>退出</button>
+            <button className="ghost" onClick={exitSelect}>完成</button>
           </div>
         )}
 
@@ -497,6 +586,18 @@ export function Options() {
             />
           </div>
         </>
+      )}
+
+      {mcpOpen && (
+        <McpSettings
+          settings={store.settings}
+          onSave={(patch) => {
+            void run({ type: 'UPDATE_SETTINGS', payload: { patch } }).then((res) => {
+              if (res.ok) flash(patch.mcpEnabled ? 'MCP 设置已保存' : 'MCP 桥已关闭');
+            });
+          }}
+          onClose={() => setMcpOpen(false)}
+        />
       )}
 
       {settingsFor &&
@@ -600,7 +701,7 @@ function RuleItem({
   selected,
   selectMode,
   checked,
-  onCheck,
+  onPick,
   dragging,
   onDragStart,
   onDragEnd,
@@ -620,7 +721,8 @@ function RuleItem({
   selected: boolean;
   selectMode: boolean;
   checked: boolean;
-  onCheck: () => void;
+  /** shift 为 true 表示范围选择 */
+  onPick: (shift: boolean) => void;
   dragging: boolean;
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
@@ -636,6 +738,7 @@ function RuleItem({
   const cls = [
     'rule-item',
     selected && 'selected',
+    selectMode && 'rule-item--pickable',
     checked && 'rule-item--checked',
     !rule.enabled && 'disabled',
     dragging && 'rule-item--dragging',
@@ -647,7 +750,15 @@ function RuleItem({
     <div
       className={cls}
       onDoubleClick={selectMode ? undefined : onEdit}
-      onClick={selectMode ? onCheck : undefined}
+      // 选择态：整行可点即选中。默认态：Cmd/Ctrl+点击直接进入选择态并选中这一行
+      onClick={(e) => {
+        if (selectMode) {
+          onPick(e.shiftKey);
+        } else if (e.metaKey || e.ctrlKey) {
+          e.preventDefault();
+          onPick(false);
+        }
+      }}
       draggable={!selectMode}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
@@ -658,19 +769,19 @@ function RuleItem({
             type="checkbox"
             className="rule-item__pick"
             checked={checked}
-            onChange={onCheck}
-            onClick={(e) => e.stopPropagation()}
+            // 复选框只负责显示。点击穿透到行的 onClick 统一走 pickRule
+            // （CSS 里 pointer-events: none），否则 shift 范围选择会走两条路径算两次
+            readOnly
+            title="选中这一行 · Shift 点击可选一段"
           />
         ) : (
           <span className="rule-item__grip" title="拖动可移到其他分组">⠿</span>
         )}
-        <input
-          type="checkbox"
+        <Switch
           checked={rule.enabled}
-          disabled={selectMode}
-          title={selectMode ? '批量模式下请用下方操作条' : '启用 / 停用'}
-          onClick={(e) => e.stopPropagation()}
-          onChange={(e) => onToggle(e.target.checked)}
+          onChange={onToggle}
+          label={`启用 / 停用「${rule.name}」`}
+          title={rule.enabled ? '已启用 —— 点击停用' : '已停用 —— 点击启用'}
         />
         <span className={`tag tag-${rule.kind}`}>{rule.kind === 'virtual' ? '虚拟' : '覆盖'}</span>
         <span className="truncate" style={{ fontWeight: 500, maxWidth: '46%' }}>{rule.name}</span>

@@ -10,7 +10,7 @@ export default defineManifest({
   // WebSocket 保活需要 116+（V2 的 MCP 长连），提前声明避免将来改
   minimum_chrome_version: '116',
 
-  permissions: ['storage', 'scripting', 'tabs'],
+  permissions: ['storage', 'scripting', 'tabs', 'alarms'],
 
   // MVP 阶段先全量，上架前改为 optional_host_permissions（见设计文档 05 §11 Q15）
   host_permissions: ['<all_urls>'],

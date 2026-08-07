@@ -13,6 +13,7 @@ import { validateRule } from '@core/store/validate.js';
 import { createResponseSpec, createRuleDraft } from '@core/store/defaults.js';
 import {
   HTTP_METHODS,
+  type BodyType,
   type Group,
   type HttpMethod,
   type Project,
@@ -21,7 +22,7 @@ import {
   type RuleDraft,
   type ShellTemplate,
 } from '@core/types.js';
-import { JsonEditor } from '@ui/JsonEditor.js';
+import { CodeEditor } from '@ui/CodeEditor.js';
 
 interface Props {
   /** 编辑现有规则时传入 */
@@ -79,6 +80,32 @@ export function RuleEditor({
         i === activeIdx ? { ...v, response: { ...v.response, ...p } } : v,
       ),
     }));
+
+  const bodyType = variant.response.bodyType;
+  const isDynamic = bodyType === 'dynamic';
+  const isMockjs = bodyType === 'mockjs';
+
+  /**
+   * 切换响应体类型。
+   *
+   * 关键在于**不能直接把 body 扔掉** —— 那是用户敲了半天的东西。
+   * 但三种 body 互不兼容（JSON / 带规则的 JSON / JS 源码），留着又会让
+   * 编辑器里躺着一坨错误。折中：只在 body 还是「一眼可丢弃」的初始值时
+   * 才自动换成对应的起手模板，否则原样保留，让用户自己决定怎么改。
+   */
+  const switchBodyType = (next: BodyType) => {
+    if (bodyType === next) return;
+    const cur = variant.response.body.trim();
+    const disposable =
+      cur === '' ||
+      cur === '{}' ||
+      cur === DYNAMIC_SNIPPETS[0]!.code.trim() ||
+      cur === MOCKJS_SNIPPETS[0]!.code.trim();
+    patchResponse({
+      bodyType: next,
+      ...(disposable ? { body: STARTER_BODY[next] } : {}),
+    });
+  };
 
   const renameVariant = (name: string) =>
     setDraft((d) => ({
@@ -380,12 +407,74 @@ export function RuleEditor({
             </div>
           </div>
 
-          <JsonEditor
-            key={`${activeIdx}-${draft.variants.length}`}
+          {/* 类型切换。放在编辑器正上方，因为它决定了下面那个框里该写什么 */}
+          <div className="bodytype">
+            {BODY_TYPE_TABS.map((t) => (
+              <button
+                key={t.value}
+                className={bodyType === t.value ? 'bodytype__on' : ''}
+                onClick={() => switchBodyType(t.value)}
+                title={t.hint}
+              >
+                {t.label}
+              </button>
+            ))}
+            <span className="grow" />
+            {isDynamic && (
+              <span className="faint" style={{ fontSize: 10.5 }}>
+                可用 <code className="mono">req.query</code> ·{' '}
+                <code className="mono">req.path</code> ·{' '}
+                <code className="mono">req.method</code>
+              </span>
+            )}
+            {isMockjs && (
+              <span className="faint" style={{ fontSize: 10.5 }}>
+                <code className="mono">"键|数量"</code> 控制条数 ·{' '}
+                <code className="mono">@占位符</code> 造假数据
+              </span>
+            )}
+          </div>
+
+          <CodeEditor
+            key={`${activeIdx}-${draft.variants.length}-${bodyType}`}
+            language={isDynamic ? 'js' : 'json'}
             value={variant.response.body}
             onChange={(body) => patchResponse({ body })}
             height="min(46vh, 520px)"
+            actions={
+              isDynamic || isMockjs ? (
+                <>
+                  <span className="json-editor__divider" />
+                  {(isDynamic ? DYNAMIC_SNIPPETS : MOCKJS_SNIPPETS).map((s) => (
+                    <button
+                      key={s.label}
+                      type="button"
+                      title={s.hint}
+                      onClick={() => patchResponse({ body: s.code })}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </>
+              ) : undefined
+            }
           />
+
+          {isDynamic && (
+            <div className="faint" style={{ fontSize: 10.5, marginTop: 5, lineHeight: 1.6 }}>
+              这里无法预览 —— MV3 扩展页面禁用了 <code className="mono">eval</code>，
+              代码只能在页面里跑。保存后到页面上发一次请求即可验证：
+              执行出错会在 DevTools 的 Mock 面板标红，页面控制台也会提示。
+            </div>
+          )}
+          {isMockjs && (
+            <div className="faint" style={{ fontSize: 10.5, marginTop: 5, lineHeight: 1.6 }}>
+              模板是纯数据、不需要 <code className="mono">eval</code>，
+              在 CSP 严格的站点上也能用（动态 JS 在那种站点会失效）。
+              数据每次请求重新生成，所以刷新页面看到的值会变。
+              支持的写法见 <code className="mono">docs/11-Mock模板语法.md</code>。
+            </div>
+          )}
         </div>
 
         {errors.map((i, n) => (
@@ -402,12 +491,152 @@ export function RuleEditor({
 /**
  * 场景预设 —— 现在是「新建一个变体」而不是覆盖当前 body。
  * 这样原来的数据不会丢，用户可以在两者间来回切。
+ *
+ * 带 body 的预设必须显式写 bodyType: 'static' —— 新变体是从当前变体复制的，
+ * 当前若是动态变体，不写就会得到「bodyType 是 dynamic，body 却是一段 JSON」，
+ * 运行时编译必然失败。「慢 3 秒」只改延迟不动 body，所以不能写。
  */
 const SCENARIO_PRESETS: { label: string; response: Partial<ResponseSpec> }[] = [
-  { label: '空数据', response: { status: 200, body: '{\n  "list": [],\n  "total": 0\n}' } },
-  { label: '500', response: { status: 500, body: '{\n  "message": "Internal Server Error"\n}' } },
-  { label: '401', response: { status: 401, body: '{\n  "message": "登录已过期"\n}' } },
+  {
+    label: '空数据',
+    response: { status: 200, bodyType: 'static', body: '{\n  "list": [],\n  "total": 0\n}' },
+  },
+  {
+    label: '500',
+    response: {
+      status: 500,
+      bodyType: 'static',
+      body: '{\n  "message": "Internal Server Error"\n}',
+    },
+  },
+  {
+    label: '401',
+    response: { status: 401, bodyType: 'static', body: '{\n  "message": "登录已过期"\n}' },
+  },
   { label: '慢 3 秒', response: { delayMs: 3000 } },
+];
+
+const BODY_TYPE_TABS: { value: BodyType; label: string; hint: string }[] = [
+  { value: 'static', label: '静态 JSON', hint: '直接写死一份 JSON' },
+  {
+    value: 'mockjs',
+    label: 'Mock 模板',
+    hint: '一行模板造一批假数据 —— 不需要 eval，CSP 严格的站点也能用',
+  },
+  {
+    value: 'dynamic',
+    label: '动态 JS',
+    hint: '写一段 JS，按请求参数现算 —— 翻页、按 id 查详情、搜索都靠它',
+  },
+];
+
+/** 切到某个类型且原 body 可丢弃时，用什么起手 */
+const STARTER_BODY: Record<BodyType, string> = {
+  static: '{}',
+  get mockjs() {
+    return MOCKJS_SNIPPETS[0]!.code;
+  },
+  get dynamic() {
+    return DYNAMIC_SNIPPETS[0]!.code;
+  },
+};
+
+/**
+ * Mock 模板示例。
+ *
+ * 第一条是切过来时的默认值 —— 刻意用最典型的列表场景，
+ * 让用户一眼看懂 `"键|数量"` 和 `@占位符` 这两件事怎么配合。
+ */
+const MOCKJS_SNIPPETS: { label: string; hint: string; code: string }[] = [
+  {
+    label: '列表',
+    hint: '一行造 10 条，id 自动递增',
+    code: `{
+  "list|10": [{
+    "id|+1": 1001,
+    "name": "@ctitle(2,4)",
+    "price|10-999.2": 1,
+    "stock|0-200": 1,
+    "owner": "@cname",
+    "status": "@pick(待付款,已发货,已完成)",
+    "createdAt": "@datetime"
+  }],
+  "total|40-60": 1,
+  "page": 1
+}`,
+  },
+  {
+    label: '详情',
+    hint: '单个对象，字段类型齐全',
+    code: `{
+  "id": "@id",
+  "title": "@ctitle(3,6)",
+  "author": "@cname",
+  "cover": "@url",
+  "tags|1-3": ["@cword"],
+  "views|100-99999": 1,
+  "score|1-5.1": 1,
+  "published": "@boolean",
+  "updatedAt": "@datetime"
+}`,
+  },
+  {
+    label: '用户',
+    hint: '常见的用户信息字段',
+    code: `{
+  "id": "@guid",
+  "name": "@cname",
+  "email": "@email",
+  "phone": "@phone",
+  "avatar": "@url",
+  "city": "@city",
+  "province": "@province",
+  "ip": "@ip",
+  "registeredAt": "@date"
+}`,
+  },
+];
+
+/**
+ * 动态响应的代码模板。
+ *
+ * 第一条是切到动态模式时的默认值，也刻意是最典型的痛点场景（翻页）——
+ * 用户一眼就能看懂「原来能这么用」，比一段空函数强。
+ */
+const DYNAMIC_SNIPPETS: { label: string; hint: string; code: string }[] = [
+  {
+    label: '分页',
+    hint: '按 page / size 生成对应页的数据',
+    code: `(req) => {
+  const page = Number(req.query.page) || 1;
+  const size = Number(req.query.size) || 10;
+  return {
+    list: Array.from({ length: size }, (_, i) => ({
+      id: (page - 1) * size + i + 1,
+      name: \`商品 \${(page - 1) * size + i + 1}\`,
+    })),
+    total: 48,
+  };
+}`,
+  },
+  {
+    label: '按 id 查详情',
+    hint: '从路径末段取 id，回不同的数据',
+    code: `(req) => {
+  const id = req.path.split('/').pop();
+  return { id, name: \`商品 \${id}\`, price: Number(id) * 10 };
+}`,
+  },
+  {
+    label: '按关键词搜索',
+    hint: '让搜索词真的影响结果',
+    code: `(req) => {
+  const kw = req.query.keyword || '';
+  const all = ['苹果', '香蕉', '橘子', '葡萄'];
+  const list = all.filter((n) => n.includes(kw));
+  return { list, total: list.length };
+}`,
+  },
 ];
 
 function KindOption({

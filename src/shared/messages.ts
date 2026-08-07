@@ -8,7 +8,7 @@
  */
 
 import type { Command } from '@core/command/types.js';
-import type { MockStore, Rule } from '@core/types.js';
+import type { BodyGenDiagnostics, MockStore, Rule } from '@core/types.js';
 
 /** MAIN world ↔ ISOLATED 之间的 postMessage 频道标识 */
 export const PAGE_CHANNEL = '__MOCK_STUDIO__';
@@ -95,6 +95,11 @@ export interface CapturedRequest {
   truncated: boolean;
   /** 耗时（毫秒） */
   durationMs: number | null;
+  /**
+   * 响应体生成诊断。只有命中了 bodyType 非 static 的规则时才有。
+   * 面板据此标红 —— 生成失败**绝不能静默**，否则用户会以为是接口本身的问题。
+   */
+  bodyGen?: BodyGenDiagnostics;
 }
 
 // ───────────────────────────────────────────────────────────

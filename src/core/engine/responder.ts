@@ -10,18 +10,41 @@
 import { getActiveVariant } from '../store/defaults.js';
 import type { MockResponse, MockStore, RequestInfo, Rule } from '../types.js';
 import { applyShell, findShellTemplate } from './shell.js';
+import { createBodyGenRuntime, type BodyGenRuntime } from './bodygen.js';
+
+/**
+ * 默认运行时。宿主不传就用这个。
+ *
+ * 是模块级单例，但它只装缓存和熔断计数，不影响「同样输入同样输出」——
+ * 唯一的例外是熔断后会持续降级，这正是它该做的事。
+ * 测试要隔离就自己 createBodyGenRuntime() 传进来（见 tests/bodygen.test.ts）。
+ */
+const defaultRuntime = createBodyGenRuntime();
 
 export function buildResponse(
   store: MockStore,
   rule: Rule,
-  _req: RequestInfo,
+  req: RequestInfo,
+  runtime: BodyGenRuntime = defaultRuntime,
 ): MockResponse {
   // 一条规则可能有多个变体，取当前生效的那个
-  const spec = getActiveVariant(rule).response;
+  const variant = getActiveVariant(rule);
+  const spec = variant.response;
 
   let body = spec.body ?? '';
+  let bodyGen: MockResponse['bodyGen'];
 
-  // 套响应外壳：规则未指定时，回落到分组 → 项目的默认值
+  // body 不是写死的（dynamic 跑 JS / mockjs 展开模板）就在这里算出来。
+  // 熔断粒度是「规则 + 变体」—— 同一条规则的不同变体是不同的代码/模板，
+  // 一个变体写错了不该把另一个也拖下水
+  if (spec.bodyType !== 'static') {
+    const gen = runtime.generate(`${rule.id}:${variant.id}`, spec.bodyType, body, req);
+    body = gen.body;
+    bodyGen = gen.diagnostics;
+  }
+
+  // 套响应外壳：规则未指定时，回落到分组 → 项目的默认值。
+  // 生成出来的 body 也要套壳 —— 「JS / 模板生成 data，外壳补公司统一格式」是最常见的组合
   const shellId = spec.shellTemplateId ?? inheritedShellId(store, rule);
   const shell = findShellTemplate(store.shellTemplates, shellId);
   if (shell) {
@@ -38,6 +61,7 @@ export function buildResponse(
     body,
     delayMs: Math.max(0, Number(spec.delayMs) || 0),
     behavior: spec.behavior ?? 'normal',
+    ...(bodyGen ? { bodyGen } : {}),
   };
 }
 

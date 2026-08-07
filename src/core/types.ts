@@ -196,10 +196,23 @@ export interface Settings {
   captureMaxCount: number;
   /** 规则列表每页条数 */
   pageSize: number;
-  /** MCP 读侧总开关 */
+  /** MCP 读侧总开关。关掉后 AI 看不到任何请求记录，写侧仍可用 */
   aiReadEnabled: boolean;
-  /** 读侧域名白名单 —— 不可关闭的措施之一 */
+  /**
+   * 读侧域名白名单。空 = 不限。
+   * 见 core/mcp/redact.ts 里 hostAllowed 的注释 —— 这里偏离了 02 §4.1，
+   * 真正不可关的那道线是**脱敏**，不是白名单。
+   */
   aiHostWhitelist: string[];
+  /** MCP 桥总开关。默认关 —— 开一个 localhost 连接是用户该主动做的决定 */
+  mcpEnabled: boolean;
+  /** MCP Server 的 WebSocket 端口 */
+  mcpPort: number;
+  /**
+   * 配对码。扩展生成、UI 显示，用户填进 MCP Server 的环境变量。
+   * 空串表示还没生成过 —— 开启桥时会自动生成一个。
+   */
+  mcpToken: string;
 }
 
 /**
@@ -222,6 +235,18 @@ export interface MockStore {
 /** storage 里的 key 名 */
 export const STORE_KEY = 'mockStore';
 
+/**
+ * MCP 桥的默认端口。
+ *
+ * 定义在 core 而不是 shared/bridge.ts —— 它是 Settings 的默认值之一，
+ * 而 core 不能反向依赖 shared（分层铁律）。bridge.ts 从这里再导出一次。
+ *
+ * 刻意**不随机化**端口（02 §2.3 原本写的是随机化）：随机端口扩展就发现不了，
+ * 除非再造一套端口协商，那反而多一个攻击面。安全靠配对码 + Origin 校验，
+ * 不靠端口猜不到 —— 端口扫描是零成本的，靠它防守本来就是错觉。
+ */
+export const DEFAULT_BRIDGE_PORT = 8787;
+
 // ───────────────────────────────────────────────────────────
 // 引擎相关（非持久化）
 // ───────────────────────────────────────────────────────────
@@ -235,6 +260,28 @@ export interface RequestInfo {
   host: string;
 }
 
+/**
+ * 响应体「生成」过程的诊断。
+ *
+ * dynamic（跑用户 JS）和 mockjs（展开模板）都属于「body 不是写死的，是算出来的」，
+ * 失败表现和用户要看的信息完全一样 —— 所以共用一个字段，用 kind 区分，
+ * 而不是各开一个平行字段让面板去 if/else 两遍。
+ * 静态响应没有这个字段。
+ */
+export interface BodyGenDiagnostics {
+  kind: Exclude<BodyType, 'static'>;
+  ok: boolean;
+  /** 失败原因（编译错 / 运行时抛错 / 模板非法 / 已熔断） */
+  error?: string;
+  durationMs: number;
+  /** 超出耗时预算 */
+  slow: boolean;
+  /** 因连续失败被熔断，本次根本没执行 */
+  tripped: boolean;
+  /** 本条规则第一次报错 —— 宿主据此只 warn 一次，不刷屏 */
+  firstFailure: boolean;
+}
+
 /** matcher/responder 产出的纯数据，由各宿主自行转成 Response 或 XHR getter */
 export interface MockResponse {
   status: number;
@@ -242,6 +289,8 @@ export interface MockResponse {
   body: string;
   delayMs: number;
   behavior: ResponseBehavior;
+  /** body 生成过程的诊断，供请求面板标红。静态响应没有这个字段 */
+  bodyGen?: BodyGenDiagnostics;
 }
 
 /** 新建规则时的草稿：id / meta / 变体 id 由系统生成 */

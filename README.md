@@ -33,7 +33,7 @@
 | **起步方式** | 空白表单，手填 URL 和 JSON | DevTools 里点一下真实请求，响应自动填好 |
 | **数据归属** | 要登录、规则存云端 | 全部本地，永不上传，共享靠导出 JSON |
 | **新增接口** | 多数只能改已有接口 | 支持凭空造接口（后端还没写也能开工） |
-| **AI 协作** | 只有给人点的 GUI | 规则是 AI 的一等公民，可直接生成并导入 |
+| **AI 协作** | 只有给人点的 GUI，AI 看不见里面发生了什么 | **MCP Server**：AI 直接看页面实际发了哪些请求、直接写规则 |
 | **响应格式** | 全局配一次 | 模板库 + 规则级选择，还能从真实响应自动识别 |
 
 ---
@@ -152,6 +152,41 @@ Skill 生成的 JSON 会经过结构自愈，以下非标准写法也能被接�
 
 所以即使 AI 记错了格式，多半也能导进去。
 
+### 让 AI 直接操作（MCP）
+
+上面那套要你复制 JSON、点导入。**接上 MCP 之后这些都不用了。**
+
+```
+你：页面没数据，帮我 mock 一下
+
+AI  → list_recent_requests(only_unmocked: true)
+      看到 GET /api/goods/list 返回 404
+    → get_request_detail
+      确认前端在传 page / size / keyword
+    → create_mock(kind: "virtual", body_type: "mockjs", ...)
+
+你：刷新页面 → 有数据了
+```
+
+你只说了一句话。没有手抄 URL，没有写 JSON，AI 也没有猜接口长什么样。
+
+**读侧才是关键**。写规则 AI 本来就会，剪贴板导入也能凑合；
+真正没有替代品的是**让 AI 看到页面实际发了哪些请求** —— 这是 GUI 工具给不了的。
+
+```bash
+cd mcp-server && npm install && npm run build
+```
+
+然后在规则管理页点右上角 **MCP** → 开启 → 复制那段客户端配置，粘进 Claude Code 的
+`.mcp.json`。配对码会自动生成。
+
+> **安全**：只监听 `127.0.0.1`；`Origin` 必须是 `chrome-extension://`（挡掉所有网页）；
+> 配对码挡掉本机其他进程。出给 AI 的数据**强制脱敏且不可关闭** ——
+> token / cookie / 密码等一律打码，脱敏发生在**扩展侧**（数据离开之前），
+> 所以就算端口被别的进程连上，拿到的也已经是打过码的。
+>
+> 完整说明见 [12 MCP Server](./docs/12-MCP-Server.md)。
+
 ---
 
 ## 功能
@@ -180,14 +215,41 @@ Skill 生成的 JSON 会经过结构自愈，以下非标准写法也能被接�
 **项目与分组**
 
 - **项目**：按系统划分，**绑定域名**（白/黑名单，支持 `*.jdpay.com` 通配）
-- **分组**：业务模块归拢，可折叠；复选框是批量启用/停用组内规则，三态显示
+- **分组**：业务模块归拢，可折叠；组头的开关批量启用/停用组内规则，三态显示
 - 两层都可选 —— 不建项目也能直接用
-- 归组支持拖拽和下拉；支持批量选择后批量删除/启停/移动
+- 归组支持拖拽和下拉；点「选择」进入选择态后可批量删除/启停/移动
+
+> 控件语义全项目统一：**☑ 复选框 = 选中这一行，●— 开关 = 它开着**。
+> 两种形态不混用，所以选择态下启停开关照样能点。
 
 **响应构造**
 
 - 自定义状态码、响应头、响应体
-- CodeMirror 编辑器：语法高亮、折叠、实时校验、格式化
+- **动态响应**：写一段 JS，按请求参数现算 —— 翻页、按 id 查详情、搜索终于能测了
+
+  ```js
+  (req) => ({
+    list: Array.from({ length: Number(req.query.size) || 10 }, (_, i) => ({
+      id: (Number(req.query.page) - 1) * 10 + i + 1,
+    })),
+    total: 48,
+  })
+  ```
+
+- **Mock 模板**：一行造一批看起来像真的数据
+
+  ```json
+  { "list|10": [{ "id|+1": 1001, "name": "@ctitle", "price|10-999.2": 1 }] }
+  ```
+
+  自研子集，没引 Mock.js —— 注入脚本每个页面都加载，Mock.js 要 20KB（gzip），
+  这份只要 6KB。而且**模板不需要 eval**，CSP 禁了 `unsafe-eval` 的站点上
+  动态 JS 用不了、模板还能用。语法见 [11 Mock 模板语法](./docs/11-Mock模板语法.md)。
+
+  两者出错都不会静默：响应体里带 `__mockStudioError__`，DevTools 面板标红，
+  控制台提示一次，同一条规则连错 3 次自动熔断。
+- CodeMirror 编辑器：JSON / JS 双模式、语法高亮、折叠、实时校验、格式化
+- 三种响应体一键切换，各自配好起手模板
 - 场景预设：空数据 / 500 / 401 / 慢 3 秒
 - 响应外壳模板库（`{status,message,data}` 等），支持自定义，Capture 时自动识别
 
@@ -224,9 +286,8 @@ Skill 生成的 JSON 会经过结构自愈，以下非标准写法也能被接�
 
 ### 尚未实现
 
-**动态响应（按参数生成数据）** ← 当前最大缺口 · Mock.js 假数据生成 ·
 场景（批量切换变体的快照）· 改请求头/请求体 · 录制模式 · HAR 导入 ·
-MCP Server · GraphQL 按 operationName 匹配
+GraphQL 按 operationName 匹配
 
 优先级与技术前提见 [09 项目状态与交接](./docs/09-项目状态与交接.md#5-下一步)。
 
@@ -239,6 +300,8 @@ src/
 ├── core/          ★ 纯 TypeScript，零 chrome / DOM 依赖
 │   ├── types.ts       规则数据模型（系统地基）
 │   ├── engine/        matcher · responder · shell · normalize
+│   │                  dynamic（跑 JS）· mockjs（展开模板）· bodygen（缓存+熔断）
+│   ├── mcp/           出给 AI 的数据脱敏（不可关的那道线）
 │   ├── command/       Command 定义 + reducer（纯函数）
 │   ├── store/         默认值 · 版本迁移 · 校验
 │   └── capture/       Capture-to-Mock 转换
@@ -251,8 +314,11 @@ src/
 │   ├── options/       规则管理
 │   └── devtools/      Mock 面板
 │
-├── shared/        插件内部通信约定
+├── shared/        插件内部通信约定（含 MCP 桥协议）
 └── ui/            跨页面复用的 React 组件
+
+mcp-server/        ★ 独立 Node 进程：stdio 接 MCP 客户端，WebSocket 接扩展
+└── src/           直接编译 ../src/core 复用业务逻辑，不走 npm 依赖
 ```
 
 ### core 层的铁律
@@ -262,7 +328,7 @@ src/
 三个具体理由，不是为了代码整洁这种虚的：
 
 1. **同一份匹配逻辑要跑在两个地方** —— Service Worker 和 MAIN world 都需要它
-2. **未来的 MCP Server 是 Node 进程**，那里没有 `chrome` 对象，但要复用同一套业务逻辑
+2. **MCP Server 是 Node 进程**，那里没有 `chrome` 对象 —— 它现在直接编译 `src/core` 复用 matcher/reducer，这条铁律已经兑现了
 3. **纯函数可以脱离浏览器测试** —— 不用启动 Chrome，不用 mock chrome API
 
 ### 数据流
@@ -278,7 +344,7 @@ src/
           Popup      DevTools 面板   各 Tab 的引擎
 ```
 
-所有状态变更（UI 点击、Capture 转规则、未来的 AI 下发）都走**同一个 `dispatch(Command)` 入口**。
+所有状态变更（UI 点击、Capture 转规则、**AI 通过 MCP 下发**）都走**同一个 `dispatch(Command)` 入口**。
 单一入口 = 单一真相 = 单一 bug 面。
 
 ---
@@ -335,7 +401,7 @@ observedCount + mockedCount > 0        // ✅ 正确
 ```bash
 npm run dev            # 开发模式：UI 热更新 + 注入脚本自动重建
 npm run build          # 完整构建（类型检查 + 注入脚本 + 主构建）
-npm test               # 156 个单元测试
+npm test               # 266 个单元测试
 npm run typecheck      # 只做类型检查
 ```
 
@@ -360,11 +426,18 @@ npm run typecheck      # 只做类型检查
 | --- | --- | --- |
 | `tests/matcher.test.ts` | 31 | 三种匹配模式边界、ReDoS 防护、host / method 过滤 |
 | `tests/groups.test.ts` | 34 | 项目、分组、域名通配、批量操作、删除策略、外壳继承链 |
-| `tests/responder.test.ts` | 19 | 响应构造、外壳套用与识别、Capture-to-Mock 转换 |
+| `tests/responder.test.ts` | 25 | 响应构造、外壳套用与识别、Capture-to-Mock 转换、动态响应集成 |
 | `tests/reducer.test.ts` | 17 | 所有 Command 的行为与纯函数性 |
 | `tests/variants.test.ts` | 16 | **变体**：切换、增删、深拷贝、生效态回落 |
-| `tests/migrate.test.ts` | 19 | **v1→v2 迁移**与结构自愈 |
+| `tests/migrate.test.ts` | 18 | **v1→v2 迁移**、结构自愈、新增设置项的补齐 |
 | `tests/inject.test.ts` | 20 | **注入层**：fetch / XHR 拦截、fail-open、延迟、健壮性 |
+| `tests/dynamic.test.ts` | 16 | **动态响应**：两种写法编译、执行降级、序列化边界 |
+| `tests/mockjs.test.ts` | 39 | **Mock 模板**：数量/递增/浮点规则、占位符、护栏、确定性 |
+| `tests/bodygen.test.ts` | 15 | **生成运行时**：编译缓存、连错熔断、报告去重 |
+| `tests/redact.test.ts` | 32 | **脱敏**（安全边界）：敏感键识别、JWT、URL / 响应体、白名单通配 |
+
+另有 **18 项 MCP 端到端**（`cd mcp-server && npm run e2e`）：用假扩展冒充 Chrome 侧，
+验证握手、Origin/配对码拒绝、读侧四个工具、写侧闭环。跑的是编译产物。
 
 注入层测试跑在 happy-dom 里真实执行 hook 逻辑 —— 伪造 XHR 响应是全项目最容易写错的地方
 （原型上的只读 getter、事件派发时序），手工验证成本高且容易漏边界。

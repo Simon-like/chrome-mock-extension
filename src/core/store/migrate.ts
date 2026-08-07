@@ -173,6 +173,9 @@ function heal(s: Bag, idFactory: () => string): MockStore {
       aiHostWhitelist: Array.isArray(settings.aiHostWhitelist)
         ? (settings.aiHostWhitelist as string[])
         : [],
+      mcpEnabled: bool(settings.mcpEnabled, def.settings.mcpEnabled),
+      mcpPort: posInt(settings.mcpPort, def.settings.mcpPort),
+      mcpToken: typeof settings.mcpToken === 'string' ? settings.mcpToken : '',
     },
     activeProjectId: typeof s.activeProjectId === 'string' ? s.activeProjectId : null,
   };

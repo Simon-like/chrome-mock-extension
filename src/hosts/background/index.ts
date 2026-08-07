@@ -16,6 +16,12 @@ import {
   registerDevtoolsPort,
 } from './broadcaster.js';
 import { buildSnapshot, dispatch, getState } from './stateManager.js';
+import {
+  RECONNECT_ALARM,
+  getBridgeStatus,
+  initBridge,
+  syncBridge,
+} from './mcpBridge.js';
 
 // ═══════════════════════════════════════════════════════════
 // 消息路由（顶层同步注册）
@@ -48,6 +54,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       clearCaptures().then(() => sendResponse({ type: 'OK' }));
       return true;
 
+    case 'GET_BRIDGE_STATUS':
+      sendResponse({ type: 'BRIDGE_STATUS', status: getBridgeStatus() });
+      return false;
+
     default:
       return false;
   }
@@ -57,15 +67,18 @@ async function handleDispatch(command: Command) {
   const result = await dispatch(command);
 
   if (result.ok) {
-    // 状态变了：更新徽章、下发新规则、通知所有 UI
-    await Promise.all([
-      updateBadge(),
-      broadcastSnapshotToAllTabs(),
-      notifyStateChanged(),
-    ]);
+    await afterDispatch();
+    // 改的是 MCP 设置就顺手把桥同步一下 —— 用户在设置里点了开关，
+    // 期待的是「立刻生效」，而不是「重启浏览器后生效」
+    if (command.type === 'UPDATE_SETTINGS') void syncBridge();
   }
 
   return { type: 'DISPATCH_RESULT', ...result };
+}
+
+/** 状态变了之后的副作用：更新徽章、下发新规则、通知所有 UI */
+async function afterDispatch() {
+  await Promise.all([updateBadge(), broadcastSnapshotToAllTabs(), notifyStateChanged()]);
 }
 
 async function notifyStateChanged() {
@@ -158,5 +171,25 @@ async function updateBadge() {
   await chrome.action.setBadgeBackgroundColor({ color: '#2563eb' });
 }
 
+// ═══════════════════════════════════════════════════════════
+// MCP 桥
+// ═══════════════════════════════════════════════════════════
+
+initBridge({ getState, dispatch, afterDispatch });
+
+/**
+ * SW 被回收后靠 alarm 唤醒重连。
+ *
+ * 心跳能让**活着的** SW 一直活着（Chrome 116+ WS 收发会重置空闲计时器），
+ * 但拦不住浏览器出于别的原因回收它。所以还要一层兜底：
+ * 醒来时 syncBridge 会发现没连上，自己重连。
+ * 1 分钟是 chrome.alarms 允许的最小周期。
+ */
+chrome.alarms.create(RECONNECT_ALARM, { periodInMinutes: 1 });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === RECONNECT_ALARM) void syncBridge();
+});
+
 // 冷启动时也刷一次
 void updateBadge();
+void syncBridge();
