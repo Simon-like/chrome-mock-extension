@@ -89,6 +89,9 @@ export interface CapturedRequest {
   /** 命中的规则 id 与名称，便于 UI 直接展示 */
   ruleId: string | null;
   ruleName: string | null;
+  /** Mock 请求发生时实际使用的变体；旧缓存记录可能没有这两个字段 */
+  variantId?: string | null;
+  variantName?: string | null;
   status: number | null;
   /** 响应体。可能被截断，见 truncated */
   body: string | null;

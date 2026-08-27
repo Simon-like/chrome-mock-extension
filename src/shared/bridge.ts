@@ -28,7 +28,7 @@ import type { MockStore, ShellTemplate } from '../core/types.js';
  *
  * v2 相对 v1 的变化（两处都是为了修真实用出来的毛病）：
  *   - HELLO 带 `role`：一个端口上可以同时接**扩展**和**其他 MCP Server 进程**，
- *     多个 AI 工具因此能共用同一个扩展（见 docs/12 §多客户端）
+ *     多个 AI 工具因此能共用同一个扩展（见 docs/architecture/mcp-server.md §多客户端）
  *   - PING 变成**要应答**的：v1 的心跳只发不验，
  *     而半开 socket 上 send() 只是写进本地缓冲、不会报错 ——
  *     于是两端都会卡在「显示已连接、实际早断了」的状态

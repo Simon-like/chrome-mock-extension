@@ -23,6 +23,7 @@ import { useStore } from '@ui/useStore.js';
 import { Splitter, useResizable } from '@ui/Splitter.js';
 import { RuleEditor } from '../options/RuleEditor.js';
 import { CodeEditor } from '@ui/CodeEditor.js';
+import { VariantSwitcher } from '@ui/VariantSwitcher.js';
 
 const inspectedTabId = chrome.devtools.inspectedWindow.tabId;
 
@@ -99,7 +100,7 @@ export function PanelApp() {
 
   const saveDraft = async (d: RuleDraft): Promise<boolean> => {
     if (createdId) {
-      const res = await run({ type: 'UPDATE_RULE', payload: { id: createdId, patch: d } });
+      const res = await run({ type: 'SAVE_RULE_DRAFT', payload: { id: createdId, draft: d } });
       return res.ok;
     }
     const res = await run({ type: 'CREATE_RULE', payload: { draft: d } });
@@ -128,6 +129,16 @@ export function PanelApp() {
     });
     return res.ok;
   };
+
+  /** 请求详情里的高频操作：不离开 DevTools 就切换或复制一份变体 */
+  const switchVariant = (ruleId: string, variantId: string) =>
+    run({ type: 'SET_ACTIVE_VARIANT', payload: { ruleId, variantId } });
+
+  const createVariant = (rule: Rule) =>
+    run({
+      type: 'CREATE_VARIANT',
+      payload: { ruleId: rule.id, name: `变体 ${rule.variants.length + 1}`, activate: true },
+    });
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
@@ -209,6 +220,8 @@ export function PanelApp() {
               onConvert={() => convertToMock(selected)}
               onClose={() => setSelected(null)}
               onSaveBody={saveRuleBody}
+              onSwitchVariant={(ruleId, variantId) => void switchVariant(ruleId, variantId)}
+              onCreateVariant={(rule) => void createVariant(rule)}
             />
           </div>
         )
@@ -380,6 +393,8 @@ function DetailPane({
   onConvert,
   onClose,
   onSaveBody,
+  onSwitchVariant,
+  onCreateVariant,
 }: {
   entry: CapturedRequest;
   /** 命中的规则。只有已 Mock 的请求才有 —— 有它才谈得上「就地编辑」 */
@@ -387,6 +402,8 @@ function DetailPane({
   onConvert: () => void;
   onClose: () => void;
   onSaveBody: (ruleId: string, variantId: string, body: string) => Promise<boolean>;
+  onSwitchVariant: (ruleId: string, variantId: string) => void;
+  onCreateVariant: (rule: Rule) => void;
 }) {
   const [copied, setCopied] = useState(false);
   /**
@@ -405,15 +422,19 @@ function DetailPane({
 
   const variant = rule?.variants.find((v) => v.id === rule.activeVariantId) ?? rule?.variants[0];
   const editable = !!rule && !!variant;
+  const requestVariantChanged =
+    !!entry.variantId && !!variant && entry.variantId !== variant.id;
   /** 生成式规则的「实际返回」是算出来的，跟源码差得远 —— 要显式告诉用户 */
   const generated = variant ? variant.response.bodyType !== 'static' : false;
 
-  // 换了一条请求就把未保存的编辑丢掉，否则会把 A 的改动存到 B 上
+  // 换请求或切变体都清掉未保存编辑，否则会把 A 变体的内容存到 B 上
   useEffect(() => {
     setDirtyBody(null);
     setSaved(false);
-    setTab('actual');
-  }, [entry.id]);
+  }, [entry.id, variant?.id]);
+
+  // 换请求回到快照；单纯切变体则留在当前视图，方便连续配置
+  useEffect(() => setTab('actual'), [entry.id]);
 
   /** 响应体格式化后再给编辑器 —— 原始的是压成一行的，缩进后才谈得上「可读」 */
   const pretty = useMemo(() => {
@@ -454,7 +475,18 @@ function DetailPane({
   return (
     <div className="detail">
       <div className="detail__head">
-        <strong style={{ fontSize: 12 }}>请求详情</strong>
+        <strong style={{ fontSize: 12 }}>请求检查</strong>
+        {rule && (
+          <div className="detail__active-variant">
+            <span>当前 Mock</span>
+            <VariantSwitcher
+              rule={rule}
+              alwaysShow
+              onSwitch={(variantId) => onSwitchVariant(rule.id, variantId)}
+              onCreate={() => onCreateVariant(rule)}
+            />
+          </div>
+        )}
         <span className="grow" />
         {!entry.mocked && (
           <button className="primary" style={{ padding: '2px 9px', fontSize: 11 }} onClick={onConvert}>
@@ -474,9 +506,10 @@ function DetailPane({
           <KV k="来源" v={entry.api === 'xhr' ? 'XMLHttpRequest' : 'fetch'} />
           {entry.durationMs != null && <KV k="耗时" v={`${entry.durationMs}ms`} />}
           {entry.mocked && entry.ruleName && <KV k="命中规则" v={entry.ruleName} />}
-          {variant && rule && rule.variants.length > 1 && (
-            <KV k="当前变体" v={variant.name} />
+          {entry.mocked && (
+            <KV k="请求时变体" v={entry.variantName ?? '旧记录未标记'} />
           )}
+          {requestVariantChanged && variant && <KV k="当前已切换为" v={variant.name} />}
           <KV k="URL" v={entry.url} mono wrap />
 
           {entry.bodyGen && (
@@ -509,16 +542,16 @@ function DetailPane({
                 <button
                   className={tab === 'actual' ? 'bodytype__on' : ''}
                   onClick={() => setTab('actual')}
-                  title="页面这次实际收到的内容"
+                  title="这一次请求发生时，页面实际收到的响应快照"
                 >
-                  实际返回
+                  本次响应
                 </button>
                 <button
                   className={tab === 'source' ? 'bodytype__on' : ''}
                   onClick={() => setTab('source')}
-                  title="规则里写的那份内容，可以直接改"
+                  title="当前激活变体的响应定义，可以直接修改"
                 >
-                  规则内容{dirty ? ' ·' : ''}
+                  当前 Mock{dirty ? ' ·' : ''}
                 </button>
               </div>
             ) : (
@@ -551,12 +584,27 @@ function DetailPane({
             </button>
           </div>
 
-          {/* 生成式规则：两个视图差别很大，说清楚免得用户以为哪个坏了 */}
-          {editable && generated && (
-            <div className="faint" style={{ fontSize: 10.5, lineHeight: 1.5 }}>
-              {tab === 'actual'
-                ? `这是${variant!.response.bodyType === 'mockjs' ? '模板展开' : 'JS 执行'}后的结果，每次请求都会重新生成。要改内容请切到「规则内容」。`
-                : `这是规则里写的${variant!.response.bodyType === 'mockjs' ? ' Mock 模板' : ' JS 源码'}，不是页面收到的东西。改完保存，刷新页面生效。`}
+          {editable && (
+            <div className={`detail__mode-note${requestVariantChanged ? ' detail__mode-note--changed' : ''}`}>
+              {tab === 'actual' ? (
+                <>
+                  <strong>请求快照</strong>
+                  <span>
+                    {entry.variantName ? `由「${entry.variantName}」生成` : '记录请求当时的返回'}；
+                    切换变体不会改写这条记录。
+                  </span>
+                </>
+              ) : (
+                <>
+                  <strong>当前配置</strong>
+                  <span>
+                    正在编辑「{variant!.name}」
+                    {generated
+                      ? `的${variant!.response.bodyType === 'mockjs' ? '模板' : ' JS 源码'}`
+                      : '的响应体'}；保存后对下一次请求生效。
+                  </span>
+                </>
+              )}
             </div>
           )}
 

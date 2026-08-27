@@ -106,7 +106,7 @@ export function Popup() {
 }
 
 /**
- * 动态响应可行性探测（Spike 工具，见 docs/10-动态响应Spike.md）
+ * 动态响应可行性探测（Spike 工具，见 docs/experiments/SPIKE-0002-dynamic-response.md）
  *
  * 为什么做成手动按钮而不是自动跑：探测被 CSP 拦下会派发 securitypolicyviolation，
  * 站点若配了 report-uri 就会收到一条我们制造的告警。这属于「在别人家里留脚印」，

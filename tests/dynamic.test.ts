@@ -3,7 +3,7 @@
  *
  * 注意这里【测不出】真实站点的 CSP —— Node 里 new Function 永远可用。
  * 能测的是：编译两种写法、执行不抛、序列化边界、上下文构造。缓存与熔断见 bodygen.test.ts。
- * CSP 那一问只能在真实页面上量，方法与结论见 docs/10-动态响应Spike.md。
+ * CSP 那一问只能在真实页面上量，方法与结论见 docs/experiments/SPIKE-0002-dynamic-response.md。
  */
 
 import { describe, expect, it } from 'vitest';

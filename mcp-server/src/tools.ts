@@ -116,6 +116,79 @@ export function registerTools(server: McpServer, bridge: BridgeTransport): void 
   // ═══════════════════════════════════════════════════
 
   server.registerTool(
+    'get_page_context',
+    {
+      title: '一次看懂当前页面的 Mock 上下文',
+      description:
+        '处理「页面没数据 / mock 怎么没生效 / 帮我补接口」时优先调用。' +
+        '一次返回总开关、规则摘要、最近异常或未命中的请求，以及下一步建议，' +
+        '避免每个 agent 先后调用 get_status、list_recent_requests、list_rules 才建立上下文。' +
+        '为了控制上下文体积只带响应预览；需要完整结构再用 get_request_detail。',
+      inputSchema: {
+        url_filter: z.string().optional().describe('只关注 URL 或规则名含该关键词的上下文'),
+        limit: z.number().int().min(1).max(20).optional().describe('最多返回多少条请求，默认 8'),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    guard(async (a) => {
+      // 两个读取互不依赖，并发走本地桥；agent 只承担一次 MCP 往返。
+      const [store, captureData] = await Promise.all([
+        getState(),
+        bridge.request({
+          type: 'GET_CAPTURES',
+          limit: 20,
+          urlFilter: a.url_filter,
+        }) as Promise<Extract<BridgeData, { kind: 'captures' }>>,
+      ]);
+
+      const kw = a.url_filter?.trim().toLowerCase();
+      const important = captureData.entries
+        .filter((e) => !e.mocked || (e.status !== null && e.status >= 400))
+        .slice(0, a.limit ?? 8);
+      const relevantRules = store.rules
+        .filter((r) =>
+          kw
+            ? r.name.toLowerCase().includes(kw) || r.match.url.toLowerCase().includes(kw)
+            : important.some((e) => e.url.includes(r.match.url)),
+        )
+        .slice(0, 8);
+
+      const recommendedNext: string[] = [];
+      if (!store.enabled) recommendedNext.push('Mock 总开关已关闭：需要 mock 时调用 set_global_enabled。');
+      if (captureData.readDisabled) {
+        recommendedNext.push('读侧已关闭：请用户开启“允许 AI 读取请求记录”，或直接提供接口 URL。');
+      } else if (captureData.entries.length === 0) {
+        recommendedNext.push('没有近期请求：让用户刷新页面或重新触发操作。');
+      } else {
+        const broken = important.find((e) => !e.mocked && (e.status === null || e.status >= 400));
+        if (broken) {
+          recommendedNext.push(
+            `先用 get_request_detail(id: "${broken.id}") 对齐字段，再决定 create_mock 或更新已有规则。`,
+          );
+        } else if (important.some((e) => !e.mocked)) {
+          recommendedNext.push('存在未命中请求：确认它是否需要 Mock，再创建或收窄匹配条件。');
+        } else {
+          recommendedNext.push('近期关键请求已命中；如页面仍异常，查看具体请求详情和当前激活变体。');
+        }
+      }
+
+      return json({
+        status: {
+          globalEnabled: store.enabled,
+          enabledRuleCount: store.rules.filter((r) => r.enabled).length,
+          totalRuleCount: store.rules.length,
+          aiReadEnabled: store.settings.aiReadEnabled,
+          captureEnabled: store.settings.captureEnabled,
+        },
+        requests: captureData.readDisabled ? [] : important.map(brief),
+        relevantRules: relevantRules.map(ruleBrief),
+        recommendedNext,
+        note: '响应只含预览；需要完整响应体时调用 get_request_detail。',
+      });
+    }),
+  );
+
+  server.registerTool(
     'list_recent_requests',
     {
       title: '列出页面最近发出的请求',

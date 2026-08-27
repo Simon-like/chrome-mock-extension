@@ -95,6 +95,8 @@ function makeEntry(
     mocked: false,
     ruleId: null,
     ruleName: null,
+    variantId: null,
+    variantName: null,
     status: null,
     body: null,
     truncated: false,
@@ -235,6 +237,8 @@ function hookFetch(): void {
         mocked: true,
         ruleId: rule.id,
         ruleName: rule.name,
+        variantId: mock.variantId,
+        variantName: mock.variantName,
         status: mock.status,
         body: mock.body,
         bodyGen: mock.bodyGen,
@@ -362,6 +366,8 @@ function hookXhr(): void {
         mocked: true,
         ruleId: rule.id,
         ruleName: rule.name,
+        variantId: mock.variantId,
+        variantName: mock.variantName,
         status: mock.status,
         body: mock.body,
         bodyGen: mock.bodyGen,
@@ -465,7 +471,7 @@ function attachCaptureListener(xhr: XMLHttpRequest, meta: XhrMeta): void {
 }
 
 // ═══════════════════════════════════════════════════════════
-// 动态响应可行性探测（Spike，见 docs/10-动态响应Spike.md）
+// 动态响应可行性探测（Spike，见 docs/experiments/SPIKE-0002-dynamic-response.md）
 // ═══════════════════════════════════════════════════════════
 
 /**

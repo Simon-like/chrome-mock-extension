@@ -1,8 +1,11 @@
 # MCP Server
 
-> 更新：2026-08-07
-> 状态：**✅ 已完成**（18 项 e2e 全通）
-> 相关：[02 号文档 §2.2](./02-需求补充：AI协同与虚拟接口.md)（L2 方案与安全清单）· [09 §4](./09-项目状态与交接.md)（A1–A4 架构预留）
+> 类型：Design / Architecture Reference
+> 状态：Implemented
+> Owner：项目维护者
+> 更新：2026-08-27
+> 验证：**✅ 40 项 e2e 全通**
+> 相关：[PRD-0001 §2.2](../product/prds/PRD-0001-ai-collaboration-and-virtual-endpoints.md)（L2 方案与安全清单）· [2026-08-07 交接快照 §4](../delivery/snapshots/2026-08-07-project-handoff.md)（A1–A4 架构预留）
 
 这是这个项目最初的立项理由之一，也是它跟所有竞品拉开距离的地方。
 
@@ -59,13 +62,13 @@ AI  → list_recent_requests(only_unmocked: true)
 
 | 文件 | 职责 |
 | --- | --- |
-| [`src/shared/bridge.ts`](../src/shared/bridge.ts) | 桥协议。**用相对导入**，两端都能直接 import |
-| [`src/core/mcp/redact.ts`](../src/core/mcp/redact.ts) | 强制脱敏 + 域名白名单，纯函数 |
-| [`src/hosts/background/mcpBridge.ts`](../src/hosts/background/mcpBridge.ts) | 扩展侧 WS client：握手、重连、心跳、翻译请求 |
-| [`mcp-server/src/bridge.ts`](../mcp-server/src/bridge.ts) | WS server：三道安全校验、请求应答配对 |
-| [`mcp-server/src/tools.ts`](../mcp-server/src/tools.ts) | 12 个 MCP 工具 + 冲突检测 |
-| [`mcp-server/src/prompts.ts`](../mcp-server/src/prompts.ts) | 3 条 Prompts —— 客户端不认 `instructions` 时的兜底入口 |
-| [`mcp-server/e2e.mjs`](../mcp-server/e2e.mjs) | 端到端冒烟，跑的是编译产物 |
+| [`src/shared/bridge.ts`](../../src/shared/bridge.ts) | 桥协议。**用相对导入**，两端都能直接 import |
+| [`src/core/mcp/redact.ts`](../../src/core/mcp/redact.ts) | 强制脱敏 + 域名白名单，纯函数 |
+| [`src/hosts/background/mcpBridge.ts`](../../src/hosts/background/mcpBridge.ts) | 扩展侧 WS client：握手、重连、心跳、翻译请求 |
+| [`mcp-server/src/bridge.ts`](../../mcp-server/src/bridge.ts) | WS server：三道安全校验、请求应答配对 |
+| [`mcp-server/src/tools.ts`](../../mcp-server/src/tools.ts) | 13 个 MCP 工具 + 首轮上下文 + 冲突检测 |
+| [`mcp-server/src/prompts.ts`](../../mcp-server/src/prompts.ts) | 3 条 Prompts —— 客户端不认 `instructions` 时的兜底入口 |
+| [`mcp-server/e2e.mjs`](../../mcp-server/e2e.mjs) | 端到端冒烟，跑的是编译产物 |
 
 ---
 
@@ -179,6 +182,7 @@ cd mcp-server && npm install && npm run build
 
 | 工具 | 用途 |
 | --- | --- |
+| `get_page_context` | Agent 首次调用：一次获得状态、关键异常/未 Mock 请求、相关规则和下一步建议 |
 | `list_recent_requests` | 页面最近发了什么。`only_unmocked: true` 直接回答「缺哪个 mock」 |
 | `get_request_detail` | 某条请求的完整响应体，用来对齐真实数据结构 |
 | `list_rules` | 现有规则与变体 |
@@ -203,6 +207,8 @@ cd mcp-server && npm install && npm run build
 **工具能表达的东西不能比 UI 少。** 第一版漏了 `headers` 和 `behavior`，
 于是「模拟请求超时」「模拟断网」这类最常见的测试场景 AI 根本做不到，
 只能让用户自己去点 —— 那 MCP 就白做了一半。
+
+多 Agent、首轮效率和免绝对路径配置的后续取舍见 [MCP v2 架构评审](./mcp-v2-review.md)。
 
 ### 冲突检测
 
@@ -293,7 +299,7 @@ cd mcp-server && npm run e2e
 ```
 
 用一个**假扩展**（带正确 Origin 和配对码的 WS client）冒充 Chrome 侧，
-不用真开浏览器就能验证整条链路。39 项覆盖：工具集完整性、未连接时的报错可操作性、
+不用真开浏览器就能验证整条链路。40 项覆盖：工具集完整性、单调用页面上下文、未连接时的报错可操作性、
 错误配对码被拒、网页 Origin 被拒、读侧四个工具、写侧闭环（含「落到扩展的确实是一条
 `CREATE_RULE` 命令」这条对 A3 的断言）、多变体 / headers / behavior 的传达、四类冲突检测、
 **两个 MCP 客户端共用一个扩展**（peer 转发、读写落到同一处）、新扩展连接顶掉旧连接、

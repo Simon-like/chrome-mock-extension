@@ -77,10 +77,10 @@ async function main(): Promise<void> {
         '  「页面没数据 / 接口报错 / 这个接口挂了 / 帮我 mock 一下 / 造点假数据 /\n' +
         '   我要看空状态 / 测一下报错 / 后端还没做这个接口 / 翻页数据不变」\n\n' +
         '【标准顺序】\n' +
-        '1. list_recent_requests（only_unmocked: true）—— 看页面到底在请求什么。\n' +
-        '   **不要让用户手抄 URL**，这是本工具集最大的价值\n' +
-        '2. get_request_detail —— 需要对齐真实字段结构时\n' +
-        '3. create_mock —— 接口本来不存在用 kind:"virtual"；\n' +
+        '1. get_page_context —— 一次看总开关、关键请求、相关规则和建议。\n' +
+        '   **不要让用户手抄 URL**，也不要先连续调用多个列表工具\n' +
+        '2. get_request_detail —— 只在需要对齐完整字段结构时\n' +
+        '3. create_mock / update_mock / add_variant —— 按上下文选择；接口本来不存在用 kind:"virtual"；\n' +
         '   要一批像真的数据用 body_type:"mockjs"；要随参数变用 "dynamic"\n' +
         '4. **告诉用户刷新页面** —— 已经发出去的请求不会重来\n\n' +
         '【常见需求对应哪个工具】\n' +

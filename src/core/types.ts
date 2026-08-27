@@ -284,6 +284,9 @@ export interface BodyGenDiagnostics {
 
 /** matcher/responder 产出的纯数据，由各宿主自行转成 Response 或 XHR getter */
 export interface MockResponse {
+  /** 这次响应实际使用的变体。请求面板据此保留请求时快照，不和后来切换的当前态混淆 */
+  variantId: string;
+  variantName: string;
   status: number;
   headers: Record<string, string>;
   body: string;

@@ -180,7 +180,7 @@ cd mcp-server && npm install && npm run build
 然后在规则管理页点右上角 **MCP** → 开启 → 复制那段客户端配置，粘进 Claude Code 的
 `.mcp.json`（或 Cursor 的 MCP 配置）。配对码会自动生成。
 
-**五分钟接上的完整步骤、常用说法、排查表 → [13 MCP 使用指南](./docs/13-MCP使用指南.md)**
+**五分钟接上的完整步骤、常用说法、排查表 → [MCP 使用指南](./docs/guides/mcp-usage.md)**
 
 > **安全**：只监听 `127.0.0.1`；`Origin` 必须是 `chrome-extension://`（挡掉所有网页）；
 > 配对码挡掉本机其他进程。出给 AI 的数据**强制脱敏且不可关闭** ——
@@ -188,9 +188,9 @@ cd mcp-server && npm install && npm run build
 > 脱敏发生在**扩展侧**（数据离开之前），就算端口被别的进程连上，拿到的也已经是打过码的。
 >
 > ⚠️ 但**真实姓名、部门、接口路径、业务数据拦不住** —— 涉密项目请关掉读侧，
-> 或用域名白名单只放行测试环境。边界说明见 [使用指南 §4](./docs/13-MCP使用指南.md)。
+> 或用域名白名单只放行测试环境。边界说明见 [使用指南 §4](./docs/guides/mcp-usage.md)。
 >
-> 实现与设计取舍见 [12 MCP Server](./docs/12-MCP-Server.md)。
+> 实现与设计取舍见 [MCP Server](./docs/architecture/mcp-server.md)。
 
 ---
 
@@ -249,7 +249,7 @@ cd mcp-server && npm install && npm run build
 
   自研子集，没引 Mock.js —— 注入脚本每个页面都加载，Mock.js 要 20KB（gzip），
   这份只要 6KB。而且**模板不需要 eval**，CSP 禁了 `unsafe-eval` 的站点上
-  动态 JS 用不了、模板还能用。语法见 [11 Mock 模板语法](./docs/11-Mock模板语法.md)。
+  动态 JS 用不了、模板还能用。语法见 [Mock 模板语法](./docs/reference/mock-template-syntax.md)。
 
   两者出错都不会静默：响应体里带 `__mockStudioError__`，DevTools 面板标红，
   控制台提示一次，同一条规则连错 3 次自动熔断。
@@ -294,7 +294,7 @@ cd mcp-server && npm install && npm run build
 场景（批量切换变体的快照）· 改请求头/请求体 · 录制模式 · HAR 导入 ·
 GraphQL 按 operationName 匹配
 
-优先级与技术前提见 [09 项目状态与交接](./docs/09-项目状态与交接.md#5-下一步)。
+2026-08-07 当时的优先级与技术前提见[项目交接快照](./docs/delivery/snapshots/2026-08-07-project-handoff.md#5-下一步)；它是历史快照，不代表当前完成度。
 
 ---
 
@@ -368,7 +368,7 @@ Content script 默认跑在 **ISOLATED world**，和页面的 JS 环境完全隔
 
 而如果晚于页面脚本执行，页面可能已经把原始 `fetch` 存进变量了，再改 `window.fetch` 也没用。
 
-→ [知识扫盲 §2](./docs/03-知识扫盲：Chrome插件核心概念.md)
+→ [Chrome 插件核心概念 §2](./docs/guides/chrome-extension-concepts.md)
 
 </td></tr>
 <tr><td><b>2</b></td><td>
@@ -394,7 +394,7 @@ window.fetch === ourFetch              // ❌ 会误报
 observedCount + mockedCount > 0        // ✅ 正确
 ```
 
-→ [Spike 验证结论 §2](./docs/04-Spike验证结论.md)
+→ [SPIKE-0001 验证结论 §2](./docs/experiments/SPIKE-0001-main-world-interception.md)
 
 </td></tr>
 </table>
@@ -423,17 +423,17 @@ npm run typecheck      # 只做类型检查
 
 一句话：**UI 改动零操作，页面脚本刷页面，后台脚本刷扩展。**
 
-完整说明见 [06 开发工作流](./docs/06-开发工作流.md)。
+完整说明见[开发工作流](./docs/guides/development-workflow.md)。
 
 ### 测试
 
 | 文件 | 数量 | 覆盖 |
 | --- | --- | --- |
 | `tests/matcher.test.ts` | 31 | 三种匹配模式边界、ReDoS 防护、host / method 过滤 |
-| `tests/groups.test.ts` | 34 | 项目、分组、域名通配、批量操作、删除策略、外壳继承链 |
-| `tests/responder.test.ts` | 25 | 响应构造、外壳套用与识别、Capture-to-Mock 转换、动态响应集成 |
+| `tests/groups.test.ts` | 37 | 项目、分组、域名通配、批量操作、删除策略、外壳继承链 |
+| `tests/responder.test.ts` | 26 | 响应构造、外壳套用与识别、Capture-to-Mock 转换、动态响应集成 |
 | `tests/reducer.test.ts` | 17 | 所有 Command 的行为与纯函数性 |
-| `tests/variants.test.ts` | 16 | **变体**：切换、增删、深拷贝、生效态回落 |
+| `tests/variants.test.ts` | 18 | **变体**：切换、增删、编辑器原子保存、生效态回落 |
 | `tests/migrate.test.ts` | 18 | **v1→v2 迁移**、结构自愈、新增设置项的补齐 |
 | `tests/inject.test.ts` | 20 | **注入层**：fetch / XHR 拦截、fail-open、延迟、健壮性 |
 | `tests/dynamic.test.ts` | 16 | **动态响应**：两种写法编译、执行降级、序列化边界 |
@@ -441,8 +441,8 @@ npm run typecheck      # 只做类型检查
 | `tests/bodygen.test.ts` | 15 | **生成运行时**：编译缓存、连错熔断、报告去重 |
 | `tests/redact.test.ts` | 40 | **脱敏**（安全边界）：敏感键识别、JWT、URL / 响应体、白名单通配 |
 
-另有 **39 项 MCP 端到端**（`cd mcp-server && npm run e2e`）：用假扩展冒充 Chrome 侧，
-验证握手、Origin/配对码拒绝、读侧四个工具、写侧闭环。跑的是编译产物。
+共 **277 个单元测试**。另有 **40 项 MCP 端到端**（`cd mcp-server && npm run e2e`）：
+用假扩展冒充 Chrome 侧，验证握手、Origin/配对码拒绝、首轮上下文、读写闭环与多客户端共享。跑的是编译产物。
 
 注入层测试跑在 happy-dom 里真实执行 hook 逻辑 —— 伪造 XHR 响应是全项目最容易写错的地方
 （原型上的只读 getter、事件派发时序），手工验证成本高且容易漏边界。
@@ -477,30 +477,18 @@ npm run typecheck      # 只做类型检查
 | 改了代码不生效 | 改 `src/hosts/inject/` 需要重新 build + 刷新扩展 + 刷新页面 |
 | 某条规则永不命中 | 看是否有「被上方规则遮蔽」的警告 —— 匹配是先到先得 |
 
-各类脚本的 console 分别在哪看：[知识扫盲 §8](./docs/03-知识扫盲：Chrome插件核心概念.md)
+各类脚本的 console 分别在哪看：[Chrome 插件核心概念 §8](./docs/guides/chrome-extension-concepts.md)
 
 ---
 
 ## 文档
 
-这个项目的文档是**先于代码**写的，记录了每个决策的来龙去脉。按顺序读能看到完整的思考过程。
+文档现在按职责管理，不再按创建序号串成一条时间线。统一从[文档中心](./docs/README.md)进入：那里区分了全局约束、产品 PRD、技术设计、ADR、可行性 Spike、操作指南、精确参考和历史交付快照。
 
-| | 内容 |
-| --- | --- |
-| [01 市场调研与产品报告](./docs/01-市场调研与产品报告.md) | 竞品盘点、三条技术路线的取舍、产品定位与差异化 |
-| [13 MCP 使用指南](./docs/13-MCP使用指南.md) | **怎么接、怎么用、AI 能看到什么、排查表** |
-| [12 MCP Server](./docs/12-MCP-Server.md) | MCP 的架构、三道安全校验、脱敏设计 |
-| [02 需求补充](./docs/02-需求补充：AI协同与虚拟接口.md) | AI 协同三级方案、虚拟接口、为 MCP 做的架构预留 |
-| [03 知识扫盲](./docs/03-知识扫盲：Chrome插件核心概念.md) | Chrome 插件核心概念，零基础可读 |
-| [04 Spike 验证结论](./docs/04-Spike验证结论.md) | 真实站点上的可行性验证结果 |
-| [05 技术方案设计](./docs/05-技术方案设计.md) | 数据模型、分层、消息协议，**每个决策都讲了为什么** |
-| [06 开发工作流](./docs/06-开发工作流.md) | 热更新流程、各处 console 在哪看、构建管线为何这样设计 |
-| [07 下阶段规划](./docs/07-下阶段规划.md) | 优先级排序与技术债（部分内容已被 08、09 更新） |
-| [08 信息架构重构 PRD](./docs/08-信息架构重构PRD.md) | **项目 / 分组 / 变体的权威定义**，v1→v2 迁移方案 |
-| [**09 项目状态与交接**](./docs/09-项目状态与交接.md) | **当前进度、下一步、不能踩的坑** —— 接手先读这份 |
+准备修改代码时，先读[全局约束](./docs/governance/global-constraints.md)与[架构总览](./docs/architecture/README.md)；准备提功能时，从 [PRD 模板](./docs/governance/templates/prd-template.md)开始。
 
 `spike/` 目录保留了最初的可行性验证代码，是一个不依赖任何构建工具的最小插件，
-适合对照 03 号文档理解 Chrome 插件的运行机制。
+适合对照 [Chrome 插件核心概念](./docs/guides/chrome-extension-concepts.md)理解运行机制。
 
 ---
 

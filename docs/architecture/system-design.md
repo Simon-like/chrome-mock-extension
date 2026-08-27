@@ -1,9 +1,12 @@
 # 技术方案设计
 
+> 类型：Design
+> 状态：Implemented；部分初版数据模型已被 PRD-0002 与当前代码替代
+> Owner：项目维护者
 > 版本：v1（评审稿）
 > 日期：2026-07-27
-> 前置：[01 产品报告](./01-市场调研与产品报告.md) · [02 需求补充](./02-需求补充：AI协同与虚拟接口.md) · [03 知识扫盲](./03-知识扫盲：Chrome插件核心概念.md) · [04 Spike 结论](./04-Spike验证结论.md)
-> 相关：[06 开发工作流](./06-开发工作流.md)
+> 前置：[产品调研](../product/discovery/market-and-product-research.md) · [PRD-0001](../product/prds/PRD-0001-ai-collaboration-and-virtual-endpoints.md) · [Chrome 插件核心概念](../guides/chrome-extension-concepts.md) · [SPIKE-0001](../experiments/SPIKE-0001-main-world-interception.md)
+> 相关：[开发工作流](../guides/development-workflow.md)
 > 写法：**教学式** —— 每个设计决策都会讲「为什么是这个方案，而不是别的」
 > 状态：**已评审通过并实现**（功能状态见文中 ✅ 标记）
 

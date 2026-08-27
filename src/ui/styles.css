@@ -1301,6 +1301,16 @@ button.danger-solid:hover:not(:disabled) {
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
+.detail__active-variant {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 6px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+  color: var(--faint);
+  font-size: 10px;
+}
 .detail__cols {
   display: flex;
   flex: 1;
@@ -1326,6 +1336,31 @@ button.danger-solid:hover:not(:disabled) {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+}
+.detail__mode-note {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 7px;
+  align-items: baseline;
+  padding: 6px 8px;
+  border-left: 2px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+.detail__mode-note strong {
+  color: var(--accent);
+  font-size: 10px;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+.detail__mode-note--changed {
+  border-left-color: var(--warn);
+  background: var(--warn-soft);
+}
+.detail__mode-note--changed strong {
+  color: var(--warn);
 }
 /* 编辑器要吃掉右栏剩下的全部高度 */
 .detail__body .json-editor {

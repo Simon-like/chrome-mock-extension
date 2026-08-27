@@ -1,7 +1,10 @@
 # MCP 使用指南
 
+> 类型：Guide
+> 状态：Active
+> Owner：项目维护者
 > 更新：2026-08-07 · 面向**使用者**
-> 想知道它怎么实现的、为什么这么设计 → [12 MCP Server](./12-MCP-Server.md)
+> 想知道它怎么实现的、为什么这么设计 → [MCP Server](../architecture/mcp-server.md)
 
 接上 MCP 之后，你对 AI 说一句「页面没数据，帮我 mock 一下」就完事了 ——
 不用手抄 URL，不用复制 JSON，AI 也不用猜接口长什么样。
@@ -162,7 +165,7 @@ cd mcp-server && npm run build     # ① 重新编译
 | 层 | 是什么 | 谁保证 |
 | --- | --- | --- |
 | ① `instructions` | Server 上的一段说明，客户端连上时**自动注入 AI 上下文** | 大多数客户端（Claude Code 实测有效）|
-| ② 工具描述 | 12 个工具各自的说明 | **一定会被 AI 看到** |
+| ② 工具描述 | 13 个工具各自的说明 | **一定会被 AI 看到** |
 | ③ Prompts | 3 条可点的操作指引，客户端一般显示成条目/斜杠命令 | 不认 ① 的客户端靠它兜底 |
 
 ①里写的不是「有哪些工具」（②本来就有），而是**什么时候该想起用它们**：
@@ -185,7 +188,7 @@ cd mcp-server && npm run build     # ① 重新编译
 （`AGENTS.md`、`.cursorrules`、JoyCode 的「规则」之类）加一句：
 
 > 涉及接口 mock、页面没数据、造假数据时，优先使用 mock-studio 这组 MCP 工具，
-> 先 `list_recent_requests` 看页面实际发了什么，不要问用户要 URL。
+> 先 `get_page_context` 看总开关、关键请求和相关规则，不要问用户要 URL。
 
 ---
 
@@ -195,6 +198,7 @@ cd mcp-server && npm run build     # ① 重新编译
 
 | 工具 | 说明 |
 | --- | --- |
+| `get_page_context` | **首选入口**：一次读取状态、关键异常/未 Mock 请求、相关规则和下一步；完整 body 再按需取 |
 | `list_recent_requests` | 页面最近的请求，最新在前。支持 `only_unmocked` / `url_filter` |
 | `get_request_detail` | 单条请求的完整响应体 |
 | `list_rules` | 现有规则与变体 |

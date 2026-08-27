@@ -219,6 +219,7 @@ async function main() {
     'create_mock',
     'delete_mock',
     'get_request_detail',
+    'get_page_context',
     'get_status',
     'list_recent_requests',
     'list_rules',
@@ -244,7 +245,7 @@ async function main() {
   check('instructions 送到了客户端（取代 skill 的那一层）', instr.length > 100, `长度 ${instr.length}`);
   check(
     'instructions 里写了触发词，而不只是工具清单',
-    instr.includes('页面没数据') && instr.includes('list_recent_requests'),
+    instr.includes('页面没数据') && instr.includes('get_page_context'),
   );
   check('instructions 说明了脱敏边界', instr.includes('redacted'));
 
@@ -283,6 +284,15 @@ async function main() {
   const status = await client.callTool({ name: 'get_status', arguments: {} });
   const statusJson = JSON.parse(status.content[0].text);
   check('get_status 读到真实状态', statusJson.ruleCount === 1 && statusJson.globalEnabled === true);
+
+  const pageContext = await client.callTool({ name: 'get_page_context', arguments: {} });
+  const pageContextJson = JSON.parse(pageContext.content[0].text);
+  check(
+    'get_page_context 一次给出状态、关键请求和下一步',
+    pageContextJson.status.globalEnabled === true &&
+      pageContextJson.requests[0].status === 404 &&
+      pageContextJson.recommendedNext[0].includes('get_request_detail'),
+  );
 
   const recent = await client.callTool({
     name: 'list_recent_requests',

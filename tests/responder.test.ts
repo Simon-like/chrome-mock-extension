@@ -31,6 +31,8 @@ describe('buildResponse', () => {
     const rule = ruleOf({ body: '{"a":1}' });
     const res = buildResponse(store, rule, req);
     expect(res).toEqual({
+      variantId: rule.variants[0]!.id,
+      variantName: '默认',
       status: 200,
       headers: { 'content-type': 'application/json' },
       body: '{"a":1}',
@@ -109,6 +111,24 @@ describe('buildResponse · 生成式响应体', () => {
   it('静态响应不带 bodyGen 字段，请求面板据此判断要不要显示诊断', () => {
     const rule = ruleOf({ body: '{"a":1}' });
     expect(buildResponse(store, rule, req).bodyGen).toBeUndefined();
+  });
+
+  it('响应携带请求当时实际使用的变体身份', () => {
+    const rule = materializeRule(
+      createRuleDraft({
+        variants: [
+          { name: '正常', response: createResponseSpec({ body: '{"state":"ok"}' }) },
+          { name: '空数据', response: createResponseSpec({ body: '{"list":[]}' }) },
+        ],
+        activeVariantIndex: 1,
+      }),
+      () => `variant-${++seq}`,
+      1,
+    );
+
+    const response = buildResponse(store, rule, req);
+    expect(response.variantId).toBe(rule.variants[1]!.id);
+    expect(response.variantName).toBe('空数据');
   });
 
   it('熔断按「规则 + 变体」隔离：一个变体写错不影响另一个', () => {

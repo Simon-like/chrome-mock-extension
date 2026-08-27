@@ -38,6 +38,28 @@ export function reduce(
       };
     }
 
+    case 'SAVE_RULE_DRAFT': {
+      const idx = store.rules.findIndex((r) => r.id === cmd.payload.id);
+      if (idx < 0) return notFound(store, cmd.payload.id);
+
+      const old = store.rules[idx]!;
+      // 复用新建规则的规范化：保留已有变体 id、给新变体补 id，
+      // 并把 activeVariantIndex 原子地转换成 activeVariantId。
+      const normalized = materializeRule(cmd.payload.draft, ctx.idFactory, ctx.now());
+      const next: Rule = {
+        ...normalized,
+        id: old.id,
+        meta: {
+          ...old.meta,
+          updatedAt: ctx.now(),
+          source: cmd.payload.draft.meta?.source ?? old.meta.source,
+        },
+      };
+      const rules = [...store.rules];
+      rules[idx] = next;
+      return { store: { ...store, rules }, result: { ok: true } };
+    }
+
     case 'UPDATE_RULE':
       return patchRule(store, cmd.payload.id, ctx, (old) => ({
         ...old,

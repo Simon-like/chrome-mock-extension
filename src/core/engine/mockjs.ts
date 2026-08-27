@@ -17,7 +17,7 @@
  *    正好补上动态响应（`dynamic.ts`）的短板，两者是互补而不是重复。
  * 3. **core 层合规**。零依赖、零 chrome/DOM，可测、将来 MCP Server 能直接复用。
  *
- * 代价是只支持一个**子集**。支持范围见 docs/11-Mock模板语法.md，
+ * 代价是只支持一个**子集**。支持范围见 docs/reference/mock-template-syntax.md，
  * 与 Mock.js 的差异也记在那里 —— 不装作完全兼容，比装了之后处处踩坑强。
  */
 

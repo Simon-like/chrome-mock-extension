@@ -1,9 +1,12 @@
 # 信息架构重构 PRD
 
+> 类型：PRD（PRD-0002）
+> 生命周期：Delivered
+> Owner：项目维护者
 > 版本：v2（已评审，含修正）
 > 日期：2026-08-05
 > 状态：**方向已确认，进入实现**
-> 配套原型：[`design/prototype.html`](../design/prototype.html)
+> 配套原型：[`design/prototype.html`](../../../design/prototype.html)
 
 ---
 

@@ -52,6 +52,8 @@ export function buildResponse(
   }
 
   return {
+    variantId: variant.id,
+    variantName: variant.name,
     status: normalizeStatus(spec.status),
     headers: {
       'content-type': 'application/json',

@@ -1,7 +1,7 @@
 /**
  * 动态响应 —— 用户写一段 JS，按请求参数现算响应体
  *
- * Spike 已通过（目标站点允许 `new Function`，见 docs/10-动态响应Spike.md §5），
+ * Spike 已通过（目标站点允许 `new Function`，见 docs/experiments/SPIKE-0002-dynamic-response.md §5），
  * 现已接进 responder：`bodyType: 'dynamic'` 时 `body` 存的是 JS 源码。
  *
  * ── 为什么当初必须先探测 ────────────────────────────

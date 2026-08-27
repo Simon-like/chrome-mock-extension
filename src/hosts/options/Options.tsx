@@ -179,7 +179,10 @@ export function Options() {
 
   const save = async (draft: RuleDraft): Promise<boolean> => {
     if (editing?.mode === 'edit') {
-      const res = await run({ type: 'UPDATE_RULE', payload: { id: editing.ruleId, patch: draft } });
+      const res = await run({
+        type: 'SAVE_RULE_DRAFT',
+        payload: { id: editing.ruleId, draft },
+      });
       return res.ok;
     }
     const res = await run({ type: 'CREATE_RULE', payload: { draft } });

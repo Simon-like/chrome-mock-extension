@@ -1,5 +1,8 @@
 # 项目状态与交接
 
+> 类型：Delivery Snapshot
+> 状态：Historical（仅代表 2026-08-07；不可作为当前完成度）
+> Owner：项目维护者
 > 更新：2026-08-07
 > 用途：**新会话从这里接手**。读完这一份就能知道项目在哪、下一步做什么、哪些坑不能踩。
 
@@ -34,21 +37,21 @@ MVP、v2 信息架构重构、**P0 动态响应**、**P1 Mock 模板**、**P2 MC
 
 | 文档 | 内容 | 是否仍然有效 |
 | --- | --- | --- |
-| [01 市场调研与产品报告](./01-市场调研与产品报告.md) | 竞品盘点、三条技术路线取舍、产品定位 | ✅ 有效（4.1/4.3/第5章已被 02、08 修订） |
-| [02 需求补充](./02-需求补充：AI协同与虚拟接口.md) | AI 协同三级方案、虚拟接口、架构预留 A1–A4 | ✅ 有效 |
-| [03 知识扫盲](./03-知识扫盲：Chrome插件核心概念.md) | **Chrome 插件核心概念，零基础可读** | ✅ 有效，改代码前建议先读 §2 |
-| [04 Spike 验证结论](./04-Spike验证结论.md) | 真实站点可行性验证 | ✅ 有效，§2 的结论至今仍在约束代码 |
-| [05 技术方案设计](./05-技术方案设计.md) | 数据模型、分层、消息协议，**每个决策讲了为什么** | ⚠️ 部分过时：数据模型章节已被 08 取代，其余有效 |
-| [06 开发工作流](./06-开发工作流.md) | 热更新流程、各处 console 在哪看、构建管线 | ✅ 有效 |
-| [07 下阶段规划](./07-下阶段规划.md) | P0/P1/P2 优先级与技术债 | ⚠️ 部分过时：里面的「已完成盘点」是重构前的 |
-| [08 信息架构重构 PRD](./08-信息架构重构PRD.md) | **项目/分组/变体的最终定义**，v1→v2 迁移 | ✅ 有效，是当前数据模型的权威来源 |
+| [市场调研与产品报告](../../product/discovery/market-and-product-research.md) | 竞品盘点、三条技术路线取舍、产品定位 | ✅ 有效（4.1/4.3/第5章已被 PRD-0001、PRD-0002 修订） |
+| [PRD-0001](../../product/prds/PRD-0001-ai-collaboration-and-virtual-endpoints.md) | AI 协同三级方案、虚拟接口、架构预留 A1–A4 | ✅ 有效 |
+| [Chrome 插件核心概念](../../guides/chrome-extension-concepts.md) | **Chrome 插件核心概念，零基础可读** | ✅ 有效，改代码前建议先读 §2 |
+| [SPIKE-0001](../../experiments/SPIKE-0001-main-world-interception.md) | 真实站点可行性验证 | ✅ 有效，§2 的结论至今仍在约束代码 |
+| [系统设计](../../architecture/system-design.md) | 数据模型、分层、消息协议，**每个决策讲了为什么** | ⚠️ 部分过时：数据模型章节已被 PRD-0002 取代，其余有效 |
+| [开发工作流](../../guides/development-workflow.md) | 热更新流程、各处 console 在哪看、构建管线 | ✅ 有效 |
+| [2026-08-05 路线图快照](./2026-08-05-roadmap.md) | P0/P1/P2 优先级与技术债 | ⚠️ 部分过时：里面的「已完成盘点」是重构前的 |
+| [PRD-0002](../../product/prds/PRD-0002-information-architecture.md) | **项目/分组/变体的最终定义**，v1→v2 迁移 | ✅ 有效，是当前数据模型的权威来源 |
 | 本文档 | 状态与交接 | — |
-| [10 动态响应 Spike](./10-动态响应Spike.md) | 动态响应的可行性推演、实现与三道防线 | ✅ 有效，Spike 已通过、功能已落地 |
-| [11 Mock 模板语法](./11-Mock模板语法.md) | 支持的模板子集、与 Mock.js 的差异、三种响应体怎么选 | ✅ 有效 |
-| [12 MCP Server](./12-MCP-Server.md) | MCP 的架构、三道安全校验、脱敏设计与取舍 | ✅ 有效 |
-| [13 MCP 使用指南](./13-MCP使用指南.md) | **面向使用者**：怎么接、怎么用、AI 能看到什么、排查表 | ✅ 有效 |
+| [SPIKE-0002](../../experiments/SPIKE-0002-dynamic-response.md) | 动态响应的可行性推演、实现与三道防线 | ✅ 有效，Spike 已通过、功能已落地 |
+| [Mock 模板语法](../../reference/mock-template-syntax.md) | 支持的模板子集、与 Mock.js 的差异、三种响应体怎么选 | ✅ 有效 |
+| [MCP Server](../../architecture/mcp-server.md) | MCP 的架构、三道安全校验、脱敏设计与取舍 | ✅ 有效 |
+| [MCP 使用指南](../../guides/mcp-usage.md) | **面向使用者**：怎么接、怎么用、AI 能看到什么、排查表 | ✅ 有效 |
 
-配套原型：[`design/prototype.html`](../design/prototype.html)（静态布局原型，可直接浏览器打开）
+配套原型：[`design/prototype.html`](../../../design/prototype.html)（静态布局原型，可直接浏览器打开）
 
 ---
 
@@ -72,7 +75,7 @@ MVP、v2 信息架构重构、**P0 动态响应**、**P1 Mock 模板**、**P2 MC
 | **诊断** | 命中次数、规则遮蔽检测、未命中提示 |
 | **其他** | 导入导出 JSON、剪贴板导入、面板宽度拖拽、CodeMirror 编辑器、`Alt+M` 快捷键、扩展图标 |
 | **AI 协同 L0** | Skill（`skills/mock-rule-authoring/`），已升级到 v2 Schema |
-| **AI 协同 L2** | **MCP Server**：AI 直接看页面请求 + 写规则。12 个工具（含多变体、响应头、超时/断网、冲突检测），配对码 + Origin 双校验，强制脱敏。见 [12 号文档](./12-MCP-Server.md) |
+| **AI 协同 L2** | **MCP Server**：AI 直接看页面请求 + 写规则。12 个工具（含多变体、响应头、超时/断网、冲突检测），配对码 + Origin 双校验，强制脱敏。见 [MCP Server](../../architecture/mcp-server.md) |
 
 ### 3.2 工程
 
@@ -125,7 +128,7 @@ src/
 })
 ```
 
-完整的推演、实现与三道防线见 [10 号文档](./10-动态响应Spike.md)。两条必须记住的：
+完整的推演、实现与三道防线见 [SPIKE-0002](../../experiments/SPIKE-0002-dynamic-response.md)。两条必须记住的：
 
 - **「超时保护」做不到**。同线程内无法中断同步死循环，只能事后测耗时 + 熔断。
   可接受的理由（爆炸半径只到开发者自己的调试页面）见 10 号文档 §4
@@ -139,7 +142,7 @@ src/
 **没有引 Mock.js，自己写了个子集** —— 注入脚本在每个页面都加载，
 Mock.js 要 20KB（gzip），自研子集只要 6KB。更重要的是**模板不需要 eval**，
 CSP 严格的站点上动态 JS 用不了、模板还能用，两条路是互补的。
-支持范围与差异见 [11 号文档](./11-Mock模板语法.md)。
+支持范围与差异见 [Mock 模板语法](../../reference/mock-template-syntax.md)。
 
 ### ~~5.3 P2 · MCP Server~~ ✅ 已完成（2026-08-07）
 
@@ -151,7 +154,7 @@ CSP 严格的站点上动态 JS 用不了、模板还能用，两条路是互补
 A1–A4 的预留在这里全部兑现：Node 进程直接编译 `../src/core` 复用业务逻辑（A1）；
 写侧只有一条 `DISPATCH` 消息，因为扩展里本来就只有 `dispatch(command)` 一个入口（A3）。
 
-架构、三道安全校验、脱敏、工具集与接入方式见 [12 号文档](./12-MCP-Server.md)。
+架构、三道安全校验、脱敏、工具集与接入方式见 [MCP Server](../../architecture/mcp-server.md)。
 
 ### 5.4 场景（Scenario）
 
@@ -296,7 +299,7 @@ MCP 桥第一版把 `status = 'connected'` 存下来，只在 onclose 时改。�
 给新会话的建议开场：
 
 > 我在做一个 Chrome 扩展 Mock Studio，代码在 `~/Desktop/development/personal/chrome-mock-extension`。
-> 先读 `docs/09-项目状态与交接.md` 了解现状，然后 [具体任务]。
+> 先读 `docs/README.md`、`docs/governance/global-constraints.md` 和相关 PRD/架构文档，然后 [具体任务]。
 
 **如果要继续开发**：P0/P1/P2 三条主线都完成了。建议先补 §7 里那条「MCP 未做真实浏览器验证」，再做 §5.4 的场景。
 

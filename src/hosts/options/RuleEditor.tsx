@@ -472,7 +472,7 @@ export function RuleEditor({
               模板是纯数据、不需要 <code className="mono">eval</code>，
               在 CSP 严格的站点上也能用（动态 JS 在那种站点会失效）。
               数据每次请求重新生成，所以刷新页面看到的值会变。
-              支持的写法见 <code className="mono">docs/11-Mock模板语法.md</code>。
+              支持的写法见 <code className="mono">docs/reference/mock-template-syntax.md</code>。
             </div>
           )}
         </div>

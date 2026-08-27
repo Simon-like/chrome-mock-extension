@@ -27,7 +27,7 @@ create_mock(...)                             ← 直接写进去
 之后 `set_active_variant` 一键切 —— 别建多条规则再互相启停，那会互相遮蔽。
 给已有规则补一份响应用 `add_variant`（`update_mock` 是**覆盖**，会把原数据冲掉）。
 
-接入方式见 `docs/12-MCP-Server.md`。以下内容仅在**没有** MCP 时适用。
+接入方式见 `docs/guides/mcp-usage.md`。以下内容仅在**没有** MCP 时适用。
 
 ## 工作流程
 
@@ -161,7 +161,7 @@ create_mock(...)                             ← 直接写进去
 - 整个值就是一个占位符时**保留原始类型**：`"id": "@natural"` 得到数字，不是字符串
 - **枚举字段用 `@pick`**，别用 `@string`
 - 单数组上限 1000 项；没实现正则生成、函数模板、`Mock.Random.extend`
-- 完整语法见 `docs/11-Mock模板语法.md`
+- 完整语法见 `docs/reference/mock-template-syntax.md`
 
 ## 动态响应（`bodyType: "dynamic"`）
 

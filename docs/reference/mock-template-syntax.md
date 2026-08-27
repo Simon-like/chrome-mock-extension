@@ -1,7 +1,10 @@
 # Mock 模板语法
 
+> 类型：Reference
+> 状态：Active
+> Owner：项目维护者
 > 更新：2026-08-06
-> 实现：[`src/core/engine/mockjs.ts`](../src/core/engine/mockjs.ts) · 测试：[`tests/mockjs.test.ts`](../tests/mockjs.test.ts)
+> 实现：[`src/core/engine/mockjs.ts`](../../src/core/engine/mockjs.ts) · 测试：[`tests/mockjs.test.ts`](../../tests/mockjs.test.ts)
 
 一行模板造一批「看起来像真的」的数据：
 
@@ -19,7 +22,7 @@
 | 理由 | 说明 |
 | --- | --- |
 | **体积** | 这段代码要打进注入脚本，而注入脚本在用户访问的**每一个页面**上加载。实测本模块给 `inject.js` 增加约 **6KB**（gzip），引 Mock.js 是约 **20KB**（gzip）。整个注入脚本现在 gzip 10.8KB，还不到 Mock.js 一个库的一半 |
-| **不需要 eval** | 模板是纯数据，展开只是遍历 + 字符串替换。于是它在 CSP 禁了 `unsafe-eval` 的站点上**照样能用** —— 正好补上[动态响应](./10-动态响应Spike.md)的短板，两者互补而非重复 |
+| **不需要 eval** | 模板是纯数据，展开只是遍历 + 字符串替换。于是它在 CSP 禁了 `unsafe-eval` 的站点上**照样能用** —— 正好补上[动态响应](../experiments/SPIKE-0002-dynamic-response.md)的短板，两者互补而非重复 |
 | **core 层合规** | 零依赖、零 chrome/DOM，可测，将来 MCP Server 能直接复用 |
 
 按需加载这条路走不通：`xhr.send()` 是同步的，等不了 `import()`。这跟 09 §6.2 是同一个约束。
@@ -126,7 +129,7 @@
 函数模板（`'name': function(){}`）、自定义扩展（`Mock.Random.extend`）。
 
 函数模板和自定义扩展需要 eval —— 那正是这条路存在的理由，做了就白做了。
-真要写逻辑请切到**动态 JS**（[10 号文档](./10-动态响应Spike.md)），两者本来就是互补的。
+真要写逻辑请切到**动态 JS**（[SPIKE-0002](../experiments/SPIKE-0002-dynamic-response.md)），两者本来就是互补的。
 
 ---
 

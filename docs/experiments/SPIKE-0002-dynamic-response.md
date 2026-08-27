@@ -1,8 +1,11 @@
 # 动态响应 Spike
 
+> 类型：Spike（SPIKE-0002）
+> 状态：Concluded
+> Owner：项目维护者
 > 更新：2026-08-06
 > 状态：**✅ Spike 通过，功能已落地**
-> 前置文档：[09 项目状态与交接](./09-项目状态与交接.md) §5.1
+> 前置文档：[2026-08-07 项目交接快照](../delivery/snapshots/2026-08-07-project-handoff.md) §5.1
 
 **结论先行**：目标站点允许 `new Function`，动态响应已完整实现并接进引擎。
 本文保留完整的推演过程 —— 换一个 CSP 更严的站点时，第 3 章的方法和第 5 章的分支依然要用。
@@ -14,7 +17,7 @@
 > **目标站点的 CSP 允不允许 `new Function`？**
 
 不允许的话，整条「动态响应」方案在那个站点上不成立 —— 不是"体验差一点"，是**根本跑不了**。
-所以先量，别先写。这跟当初做注入可行性 Spike 是同一个道理（[04 号文档](./04-Spike验证结论.md)）。
+所以先量，别先写。这跟当初做注入可行性 Spike 是同一个道理（[SPIKE-0001](./SPIKE-0001-main-world-interception.md)）。
 
 ---
 
@@ -71,13 +74,13 @@ document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content
 
 | 位置 | 内容 |
 | --- | --- |
-| [`src/core/engine/dynamic.ts`](../src/core/engine/dynamic.ts) | 能力探测 · 编译 · 受保护执行 · 上下文构造 · **运行时（编译缓存 + 熔断）**。纯函数，无 chrome/DOM 依赖 |
-| [`src/core/engine/responder.ts`](../src/core/engine/responder.ts) | `bodyType: 'dynamic'` 时现算 body，结果继续走外壳 |
-| [`src/hosts/inject/index.ts`](../src/hosts/inject/index.ts) | 持有页面级 runtime；探测入口；失败时 console 提示一次；收到新快照清熔断 |
-| [`src/hosts/options/RuleEditor.tsx`](../src/hosts/options/RuleEditor.tsx) | 静态 / 动态切换、三个代码模板 |
-| [`src/ui/CodeEditor.tsx`](../src/ui/CodeEditor.tsx) | JS 模式 + **不求值的语法校验**（见下） |
-| [`src/hosts/devtools/PanelApp.tsx`](../src/hosts/devtools/PanelApp.tsx) | 执行失败的请求标红、详情里显示错误与耗时 |
-| [`tests/dynamic.test.ts`](../tests/dynamic.test.ts) · [`tests/responder.test.ts`](../tests/responder.test.ts) | 25 + 25 个测试 |
+| [`src/core/engine/dynamic.ts`](../../src/core/engine/dynamic.ts) | 能力探测 · 编译 · 受保护执行 · 上下文构造 · **运行时（编译缓存 + 熔断）**。纯函数，无 chrome/DOM 依赖 |
+| [`src/core/engine/responder.ts`](../../src/core/engine/responder.ts) | `bodyType: 'dynamic'` 时现算 body，结果继续走外壳 |
+| [`src/hosts/inject/index.ts`](../../src/hosts/inject/index.ts) | 持有页面级 runtime；探测入口；失败时 console 提示一次；收到新快照清熔断 |
+| [`src/hosts/options/RuleEditor.tsx`](../../src/hosts/options/RuleEditor.tsx) | 静态 / 动态切换、三个代码模板 |
+| [`src/ui/CodeEditor.tsx`](../../src/ui/CodeEditor.tsx) | JS 模式 + **不求值的语法校验**（见下） |
+| [`src/hosts/devtools/PanelApp.tsx`](../../src/hosts/devtools/PanelApp.tsx) | 执行失败的请求标红、详情里显示错误与耗时 |
+| [`tests/dynamic.test.ts`](../../tests/dynamic.test.ts) · [`tests/responder.test.ts`](../../tests/responder.test.ts) | 25 + 25 个测试 |
 
 ### 写法：两种都支持
 
