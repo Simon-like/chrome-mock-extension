@@ -52,6 +52,9 @@ export type ResponseBehavior = 'normal' | 'timeout' | 'networkError';
 /** 规则从哪来的 —— 用于统计与调试 */
 export type RuleSource = 'manual' | 'capture' | 'ai' | 'import';
 
+/** 三套主题只切换语义 token，不分叉组件样式 */
+export type ThemeId = 'signal' | 'circuit' | 'slate';
+
 export interface MatchCondition {
   urlMode: UrlMode;
   /** 按 urlMode 解释：包含 / 通配符 / 正则 */
@@ -190,6 +193,8 @@ export interface ShellTemplate {
 }
 
 export interface Settings {
+  /** 全宿主共享的视觉主题。默认 circuit，适合长时间调试 */
+  theme: ThemeId;
   /** 是否采集请求流（F5） */
   captureEnabled: boolean;
   /** 请求流最多保留条数 */

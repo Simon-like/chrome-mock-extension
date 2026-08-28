@@ -175,6 +175,43 @@ function truncate(body: string): { body: string; truncated: boolean } {
   return { body: body.slice(0, MAX_CAPTURE_BODY), truncated: true };
 }
 
+type ReplaySnapshot = NonNullable<CapturedRequest['replay']>;
+
+function replayBody(body: BodyInit | Document | null | undefined): Pick<ReplaySnapshot, 'body' | 'bodyUnavailable'> {
+  if (body == null) return { body: null, bodyUnavailable: false };
+  if (typeof body === 'string') return { body, bodyUnavailable: false };
+  if (body instanceof URLSearchParams) return { body: body.toString(), bodyUnavailable: false };
+  return { body: null, bodyUnavailable: true };
+}
+
+function headersRecord(headers?: HeadersInit): Record<string, string> {
+  const result: Record<string, string> = {};
+  try {
+    new Headers(headers).forEach((value, key) => {
+      result[key] = value;
+    });
+  } catch {
+    /* 非法请求头不影响原请求 */
+  }
+  return result;
+}
+
+function fetchReplay(args: Parameters<typeof fetch>, method: string): ReplaySnapshot {
+  const [input, init] = args;
+  const headers = input instanceof Request ? headersRecord(input.headers) : {};
+  Object.assign(headers, headersRecord(init?.headers));
+
+  if (method === 'GET' || method === 'HEAD') {
+    return { headers, body: null, bodyUnavailable: false };
+  }
+  if (init && 'body' in init) return { headers, ...replayBody(init.body) };
+
+  // Request 对象的 body 是流；读取 clone 也会引入异步和兼容性副作用。
+  return input instanceof Request && input.body !== null
+    ? { headers, body: null, bodyUnavailable: true }
+    : { headers, body: null, bodyUnavailable: false };
+}
+
 function sleep(ms: number): Promise<void> {
   return ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve();
 }
@@ -195,6 +232,7 @@ function hookFetch(): void {
     }
 
     const rule = lookupRule(req);
+    const replay = fetchReplay(args, req.method);
 
     if (!rule) {
       observedCount++;
@@ -215,14 +253,15 @@ function hookFetch(): void {
                   body: t.body,
                   truncated: t.truncated,
                   durationMs: Date.now() - started,
+                  replay,
                 }),
               );
             })
             .catch(() => {
-              reportEvent(makeEntry(req, 'fetch', { status: res.status }));
+              reportEvent(makeEntry(req, 'fetch', { status: res.status, replay }));
             });
         }).catch(() => {
-          reportEvent(makeEntry(req, 'fetch', {}));
+          reportEvent(makeEntry(req, 'fetch', { replay }));
         });
       }
       return p;
@@ -242,6 +281,7 @@ function hookFetch(): void {
         status: mock.status,
         body: mock.body,
         bodyGen: mock.bodyGen,
+        replay,
       }),
     );
 
@@ -349,12 +389,13 @@ function hookXhr(): void {
     if (!meta) return originalSend.call(this, body ?? null);
 
     const rule = lookupRule(meta.req);
+    const replay: ReplaySnapshot = { headers: { ...meta.headers }, ...replayBody(body) };
 
     if (!rule) {
       observedCount++;
       meta.startedAt = Date.now();
       if (snapshot?.captureEnabled) {
-        attachCaptureListener(this, meta);
+        attachCaptureListener(this, meta, replay);
       }
       return originalSend.call(this, body ?? null);
     }
@@ -371,6 +412,7 @@ function hookXhr(): void {
         status: mock.status,
         body: mock.body,
         bodyGen: mock.bodyGen,
+        replay,
       }),
     );
 
@@ -445,7 +487,7 @@ function fulfillXhr(xhr: XMLHttpRequest, mock: MockResponse, url: string): void 
   }, mock.delayMs);
 }
 
-function attachCaptureListener(xhr: XMLHttpRequest, meta: XhrMeta): void {
+function attachCaptureListener(xhr: XMLHttpRequest, meta: XhrMeta, replay: ReplaySnapshot): void {
   xhr.addEventListener('load', () => {
     let text: string | null = null;
     try {
@@ -465,6 +507,7 @@ function attachCaptureListener(xhr: XMLHttpRequest, meta: XhrMeta): void {
         body: t.body,
         truncated: t.truncated,
         durationMs: Date.now() - meta.startedAt,
+        replay,
       }),
     );
   });

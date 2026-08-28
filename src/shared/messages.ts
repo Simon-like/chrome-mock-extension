@@ -99,6 +99,17 @@ export interface CapturedRequest {
   /** 耗时（毫秒） */
   durationMs: number | null;
   /**
+   * 用于 DevTools「重新发送」的最小请求快照。
+   *
+   * 只记录可以同步、安全序列化的请求体；Blob / FormData / Stream 等不会被读取，
+   * 避免采集行为消费业务请求流。旧缓存记录没有该字段。
+   */
+  replay?: {
+    headers: Record<string, string>;
+    body: string | null;
+    bodyUnavailable: boolean;
+  };
+  /**
    * 响应体生成诊断。只有命中了 bodyType 非 static 的规则时才有。
    * 面板据此标红 —— 生成失败**绝不能静默**，否则用户会以为是接口本身的问题。
    */

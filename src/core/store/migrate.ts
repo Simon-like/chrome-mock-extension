@@ -166,6 +166,10 @@ function heal(s: Bag, idFactory: () => string): MockStore {
     rules: healRules(s.rules, idFactory),
     shellTemplates: mergeShellTemplates(s.shellTemplates),
     settings: {
+      theme:
+        settings.theme === 'signal' || settings.theme === 'circuit' || settings.theme === 'slate'
+          ? settings.theme
+          : def.settings.theme,
       captureEnabled: bool(settings.captureEnabled, def.settings.captureEnabled),
       captureMaxCount: posInt(settings.captureMaxCount, def.settings.captureMaxCount),
       pageSize: posInt(settings.pageSize, def.settings.pageSize),

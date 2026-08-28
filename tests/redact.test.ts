@@ -240,6 +240,15 @@ describe('redactCapture', () => {
     expect(out.status).toBe(200);
     expect(out.durationMs).toBe(12);
   });
+
+  it('不会把仅供本机重放的请求头和请求体带给 MCP', () => {
+    const input = {
+      ...base,
+      replay: { headers: { authorization: 'secret' }, body: 'password=secret', bodyUnavailable: false },
+    };
+    const out = redactCapture(input);
+    expect('replay' in out).toBe(false);
+  });
 });
 
 describe('hostAllowed', () => {

@@ -29,6 +29,7 @@ import { GearIcon, ProjectSidebar } from './ProjectSidebar.js';
 import { ConfirmDelete, type DeleteMode } from '@ui/ConfirmDelete.js';
 import { ProjectSettings } from './ProjectSettings.js';
 import { McpSettings } from './McpSettings.js';
+import { AppSettings } from './AppSettings.js';
 
 const EDITOR_DEFAULT_WIDTH = 560;
 const DRAG_MIME = 'application/x-mockstudio-rule';
@@ -40,6 +41,7 @@ export function Options() {
   const [editing, setEditing] = useState<Editing>(null);
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
   const [mcpOpen, setMcpOpen] = useState(false);
+  const [appSettingsOpen, setAppSettingsOpen] = useState(false);
   /** 待确认删除的对象。删容器是不可逆操作，必须让用户明确选内容怎么办 */
   const [deleting, setDeleting] = useState<
     | { kind: 'group'; id: string }
@@ -399,7 +401,7 @@ export function Options() {
           </div>
         </div>
 
-        <div className="row" style={{ gap: 6, padding: '12px 22px', flexWrap: 'wrap', flexShrink: 0 }}>
+        <div className="options-toolbar">
           <button className="primary" onClick={() => setEditing({ mode: 'new' })}>+ 新建规则</button>
           <button
             onClick={async () => {
@@ -431,19 +433,19 @@ export function Options() {
             {inSelectMode ? '完成选择' : '选择'}
           </button>
           <span className="grow" />
-          <button
-            className={store.settings.mcpEnabled ? 'primary' : 'ghost'}
-            onClick={() => setMcpOpen(true)}
-            title="让 Claude Code / Cursor 里的 AI 直接看请求、写规则"
-          >
-            MCP{store.settings.mcpEnabled ? ' · 开' : ''}
+          <button className="ghost" onClick={() => setAppSettingsOpen(true)} title="主题、请求采集与 MCP">
+            <GearIcon size={14} /> 设置
           </button>
-          <button className="ghost" onClick={importFromClipboard} title="粘贴 AI 生成的规则 JSON">
-            剪贴板导入
-          </button>
-          <button className="ghost" onClick={() => importRules('merge')}>导入</button>
-          <button className="ghost" onClick={() => importRules('replace')}>导入并替换</button>
-          <button className="ghost" onClick={exportRules}>导出</button>
+          <details className="toolbar-more">
+            <summary>更多</summary>
+            <div className="toolbar-more__menu">
+              <button onClick={importFromClipboard} title="粘贴 AI 生成的规则 JSON">剪贴板导入</button>
+              <button onClick={() => importRules('merge')}>从文件导入</button>
+              <button onClick={() => importRules('replace')}>导入并替换</button>
+              <span />
+              <button onClick={exportRules}>导出全部规则</button>
+            </div>
+          </details>
         </div>
 
         {notice && (
@@ -581,6 +583,7 @@ export function Options() {
                   ? createRuleDraft({ projectId: store.activeProjectId })
                   : undefined
               }
+              title={editing.mode === 'new' ? '新建规则' : undefined}
               projects={store.projects}
               groups={store.groups}
               shellTemplates={store.shellTemplates}
@@ -600,6 +603,18 @@ export function Options() {
             });
           }}
           onClose={() => setMcpOpen(false)}
+        />
+      )}
+
+      {appSettingsOpen && (
+        <AppSettings
+          settings={store.settings}
+          onSave={(patch) => void run({ type: 'UPDATE_SETTINGS', payload: { patch } })}
+          onOpenMcp={() => {
+            setAppSettingsOpen(false);
+            setMcpOpen(true);
+          }}
+          onClose={() => setAppSettingsOpen(false)}
         />
       )}
 

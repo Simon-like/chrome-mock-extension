@@ -143,6 +143,22 @@ describe('结构自愈', () => {
     expect(store.settings.mcpToken).toBe('');
   });
 
+  it('老 store 缺主题时默认使用 circuit', () => {
+    const { store } = migrate({
+      schemaVersion: 2,
+      rules: [],
+      settings: { captureEnabled: true },
+    });
+    expect(store.settings.theme).toBe('circuit');
+  });
+
+  it('非法主题回落到 circuit，合法主题保持不变', () => {
+    const invalid = migrate({ schemaVersion: 2, rules: [], settings: { theme: 'neon' } });
+    const signal = migrate({ schemaVersion: 2, rules: [], settings: { theme: 'signal' } });
+    expect(invalid.store.settings.theme).toBe('circuit');
+    expect(signal.store.settings.theme).toBe('signal');
+  });
+
   it('已有的 MCP 设置不被默认值覆盖', () => {
     const { store } = migrate({
       schemaVersion: 2,

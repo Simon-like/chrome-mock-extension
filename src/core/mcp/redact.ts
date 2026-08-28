@@ -251,9 +251,18 @@ export function redactCapture(c: CaptureLike): RedactedCaptureLike {
   const url = redactUrl(c.url);
   const body = redactBody(c.body);
   return {
-    ...c,
+    id: c.id,
+    at: c.at,
     url,
+    method: c.method,
+    api: c.api,
+    mocked: c.mocked,
+    ruleId: c.ruleId,
+    ruleName: c.ruleName,
+    status: c.status,
     body,
+    truncated: c.truncated,
+    durationMs: c.durationMs,
     redacted: url !== c.url || body !== c.body,
   };
 }

@@ -56,6 +56,7 @@ export const BUILTIN_SHELL_TEMPLATES: ShellTemplate[] = [
 ];
 
 export const DEFAULT_SETTINGS: Settings = {
+  theme: 'circuit',
   captureEnabled: true,
   captureMaxCount: 200,
   pageSize: 15,

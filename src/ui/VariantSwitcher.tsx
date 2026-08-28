@@ -8,7 +8,8 @@
  *   - 只有一个变体时不显示（没有可切的，徽标只是噪音）
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { Rule } from '@core/types.js';
 
 interface Props {
@@ -21,16 +22,51 @@ interface Props {
 
 export function VariantSwitcher({ rule, onSwitch, onCreate, alwaysShow }: Props) {
   const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ top: 0, left: 0, placed: false, above: false });
   const ref = useRef<HTMLSpanElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (!ref.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
     };
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
   }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+
+    const place = () => {
+      const trigger = ref.current?.getBoundingClientRect();
+      const menu = menuRef.current;
+      if (!trigger || !menu) return;
+
+      const margin = 8;
+      const gap = 6;
+      const width = menu.offsetWidth;
+      const height = menu.offsetHeight;
+      const above = trigger.bottom + gap + height > window.innerHeight - margin && trigger.top > height + gap + margin;
+      const top = above ? trigger.top - height - gap : trigger.bottom + gap;
+      // 规则行的切换器通常靠右；右对齐后菜单向左展开，不会无谓盖住 Inspector。
+      const preferredLeft = trigger.right - width;
+      const left = Math.min(
+        Math.max(margin, preferredLeft),
+        Math.max(margin, window.innerWidth - width - margin),
+      );
+      setPosition({ top, left, placed: true, above });
+    };
+
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [open, rule.variants.length]);
 
   if (rule.variants.length <= 1 && !alwaysShow) return null;
 
@@ -52,8 +88,13 @@ export function VariantSwitcher({ rule, onSwitch, onCreate, alwaysShow }: Props)
       <span className="vsel__name">{active.name}</span>
       <span className="vsel__caret">▾</span>
 
-      {open && (
-        <div className="vpop" onClick={(e) => e.stopPropagation()}>
+      {open && createPortal(
+        <div
+          ref={menuRef}
+          className={`vpop${position.above ? ' vpop--above' : ''}`}
+          style={{ top: position.top, left: position.left, visibility: position.placed ? 'visible' : 'hidden' }}
+          onClick={(e) => e.stopPropagation()}
+        >
           {rule.variants.map((v) => (
             <button
               key={v.id}
@@ -82,7 +123,8 @@ export function VariantSwitcher({ rule, onSwitch, onCreate, alwaysShow }: Props)
               </button>
             </>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </span>
   );

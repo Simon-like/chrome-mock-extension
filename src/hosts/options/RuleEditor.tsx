@@ -29,6 +29,8 @@ interface Props {
   initial?: Rule;
   /** 以一份预填草稿开始（Capture-to-Mock 用这个）。与 initial 互斥 */
   initialDraft?: RuleDraft;
+  /** 草稿入口的明确语义，避免把「新建虚拟接口」误写成「从请求创建」 */
+  title?: string;
   projects?: Project[];
   groups?: Group[];
   shellTemplates: ShellTemplate[];
@@ -40,6 +42,7 @@ interface Props {
 export function RuleEditor({
   initial,
   initialDraft,
+  title: titleOverride,
   projects,
   groups,
   shellTemplates,
@@ -170,7 +173,7 @@ export function RuleEditor({
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  const title = initial ? '编辑规则' : initialDraft ? '从请求创建 Mock' : '新建规则';
+  const title = titleOverride ?? (initial ? '编辑规则' : initialDraft ? '从请求创建 Mock' : '新建规则');
   /**
    * 只列当前项目下的分组。
    * 之前的写法会把所有全局分组也列进来，导致下拉里出现别的项目的分组，

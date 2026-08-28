@@ -27,6 +27,12 @@ export function useStore(): UseStoreResult {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // 主题属于持久化业务设置；所有 UI host 通过同一订阅即时同步，不各存一份 localStorage。
+  useEffect(() => {
+    if (!store) return;
+    document.documentElement.dataset.theme = store.settings.theme;
+  }, [store?.settings.theme]);
+
   useEffect(() => {
     let alive = true;
 

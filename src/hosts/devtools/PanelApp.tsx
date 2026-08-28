@@ -15,6 +15,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { captureToRuleDraft } from '@core/capture/toRule.js';
+import { createRuleDraft } from '@core/store/defaults.js';
 import type { CapturedRequest } from '@shared/messages.js';
 import { DEVTOOLS_PORT_NAME } from '@shared/messages.js';
 import { clearCaptures, fetchCaptures } from '@shared/rpc.js';
@@ -39,6 +40,7 @@ export function PanelApp() {
   const [filter, setFilter] = useState('');
   const [onlyMocked, setOnlyMocked] = useState(false);
   const [draft, setDraft] = useState<RuleDraft | null>(null);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [draftKey, setDraftKey] = useState(0);
   const [selected, setSelected] = useState<CapturedRequest | null>(null);
 
@@ -88,6 +90,7 @@ export function PanelApp() {
       }),
     );
     setDraftKey((k) => k + 1);
+    setEditingRuleId(null);
     setCreatedId(null); // 换了一条请求，重新算作新建
     setSelected(entry);
   };
@@ -99,6 +102,10 @@ export function PanelApp() {
   const [createdId, setCreatedId] = useState<string | null>(null);
 
   const saveDraft = async (d: RuleDraft): Promise<boolean> => {
+    if (editingRuleId) {
+      const res = await run({ type: 'SAVE_RULE_DRAFT', payload: { id: editingRuleId, draft: d } });
+      return res.ok;
+    }
     if (createdId) {
       const res = await run({ type: 'SAVE_RULE_DRAFT', payload: { id: createdId, draft: d } });
       return res.ok;
@@ -110,7 +117,64 @@ export function PanelApp() {
 
   const closeEditor = () => {
     setDraft(null);
+    setEditingRuleId(null);
     setCreatedId(null);
+  };
+
+  const createVirtualEndpoint = () => {
+    setDraft(
+      createRuleDraft({
+        name: '新建虚拟接口',
+        kind: 'virtual',
+        projectId: store?.activeProjectId ?? null,
+      }),
+    );
+    setEditingRuleId(null);
+    setCreatedId(null);
+    setDraftKey((k) => k + 1);
+  };
+
+  const createBlankRule = () => {
+    setDraft(createRuleDraft({ projectId: store?.activeProjectId ?? null }));
+    setEditingRuleId(null);
+    setCreatedId(null);
+    setDraftKey((k) => k + 1);
+  };
+
+  const editRule = (rule: Rule) => {
+    setDraft(null);
+    setEditingRuleId(rule.id);
+    setCreatedId(null);
+    setDraftKey((k) => k + 1);
+  };
+
+  const replayRequest = async (entry: CapturedRequest): Promise<{ ok: boolean; message: string }> => {
+    const method = entry.method.toUpperCase();
+    const replay = entry.replay;
+    if (!replay && method !== 'GET' && method !== 'HEAD') {
+      return { ok: false, message: '旧记录没有请求体快照，请重新触发一次请求后再试' };
+    }
+    if (replay?.bodyUnavailable) {
+      return { ok: false, message: '该请求使用了 FormData、Blob 或流式请求体，暂不支持安全重放' };
+    }
+
+    const init: RequestInit = {
+      method,
+      headers: replay?.headers ?? {},
+      credentials: 'include',
+    };
+    if (method !== 'GET' && method !== 'HEAD' && replay?.body != null) init.body = replay.body;
+    const expression = `void fetch(${JSON.stringify(entry.url)}, ${JSON.stringify(init)}).catch((error) => console.error('[Mock Studio] 重新发送失败', error)); 'queued'`;
+
+    return new Promise((resolve) => {
+      chrome.devtools.inspectedWindow.eval(expression, (_result, exceptionInfo) => {
+        if (exceptionInfo?.isException || exceptionInfo?.isError) {
+          resolve({ ok: false, message: exceptionInfo.value ?? '页面拒绝执行请求' });
+          return;
+        }
+        resolve({ ok: true, message: '已重新发送，新请求会出现在列表末尾' });
+      });
+    });
   };
 
   /**
@@ -141,8 +205,8 @@ export function PanelApp() {
     });
 
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+    <div className="devtools-shell">
+      <div className="devtools-main">
         <Toolbar
           filter={filter}
           onFilter={setFilter}
@@ -161,6 +225,8 @@ export function PanelApp() {
             await clearCaptures();
             setEntries([]);
           }}
+          onCreateVirtual={createVirtualEndpoint}
+          onCreateRule={createBlankRule}
         />
 
         <div style={{ flex: 1, overflowY: 'auto' }}>
@@ -185,13 +251,14 @@ export function PanelApp() {
                 matchedRule={store?.rules.find((r) => r.id === e.ruleId)}
                 onConvert={() => convertToMock(e)}
                 onSelect={() => setSelected(e)}
+                onEditRule={matchedRule => editRule(matchedRule)}
               />
             ))
           )}
         </div>
       </div>
 
-      {(draft || selected) && (
+      {(draft || editingRuleId || selected) && (
         <Splitter
           onResize={sidePane.setWidth}
           onDragStateChange={sidePane.setDragging}
@@ -199,11 +266,13 @@ export function PanelApp() {
         />
       )}
 
-      {draft ? (
+      {draft || editingRuleId ? (
         <div style={{ width: sidePane.width, flexShrink: 0, minWidth: 0 }}>
           <RuleEditor
             key={draftKey}
-            initialDraft={draft}
+            initial={editingRuleId ? store?.rules.find((rule) => rule.id === editingRuleId) : undefined}
+            initialDraft={draft ?? undefined}
+            title={editingRuleId ? '编辑规则' : draft?.kind === 'virtual' ? '新建虚拟接口' : '从请求创建 Mock'}
             projects={store?.projects}
             groups={store?.groups}
             shellTemplates={store?.shellTemplates ?? []}
@@ -222,6 +291,8 @@ export function PanelApp() {
               onSaveBody={saveRuleBody}
               onSwitchVariant={(ruleId, variantId) => void switchVariant(ruleId, variantId)}
               onCreateVariant={(rule) => void createVariant(rule)}
+              onEditRule={editRule}
+              onReplay={replayRequest}
             />
           </div>
         )
@@ -240,18 +311,11 @@ function Toolbar(props: {
   globalEnabled: boolean;
   onToggleGlobal: () => void;
   onClear: () => void;
+  onCreateVirtual: () => void;
+  onCreateRule: () => void;
 }) {
   return (
-    <div
-      className="row"
-      style={{
-        padding: '8px 10px',
-        gap: 8,
-        borderBottom: '1px solid var(--border)',
-        flexWrap: 'wrap',
-        flexShrink: 0,
-      }}
-    >
+    <div className="devtools-toolbar">
       <button
         className={props.globalEnabled ? 'primary' : ''}
         style={{ padding: '3px 9px', fontSize: 11 }}
@@ -279,6 +343,13 @@ function Toolbar(props: {
 
       <span style={{ flex: 1 }} />
 
+      <button style={{ padding: '3px 9px', fontSize: 11 }} onClick={props.onCreateRule}>
+        + Mock
+      </button>
+      <button className="primary" style={{ padding: '3px 9px', fontSize: 11 }} onClick={props.onCreateVirtual}>
+        + 虚拟接口
+      </button>
+
       <span className="muted" style={{ fontSize: 11 }}>
         {props.total} 个请求 ·{' '}
         <span className={props.mocked > 0 ? 'ok' : undefined}>{props.mocked} 个已 Mock</span>
@@ -303,12 +374,14 @@ function EntryRow({
   matchedRule,
   onConvert,
   onSelect,
+  onEditRule,
 }: {
   entry: CapturedRequest;
   selected: boolean;
   matchedRule?: Rule;
   onConvert: () => void;
   onSelect: () => void;
+  onEditRule: (rule: Rule) => void;
 }) {
   // 响应体没生成出来时必须压过 mocked 的绿底 —— 「Mock 生效了」和「Mock 算错了」
   // 是两件事，后者更紧急，不能被前者的成功色盖住
@@ -361,7 +434,7 @@ function EntryRow({
       </span>
 
       <span className="req-row__action" style={{ width: 66, flexShrink: 0 }}>
-        {!entry.mocked && (
+        {!entry.mocked ? (
           <button
             className="tiny"
             onClick={(e) => {
@@ -371,7 +444,17 @@ function EntryRow({
           >
             转为 Mock
           </button>
-        )}
+        ) : matchedRule ? (
+          <button
+            className="tiny"
+            onClick={(event) => {
+              event.stopPropagation();
+              onEditRule(matchedRule);
+            }}
+          >
+            编辑规则
+          </button>
+        ) : null}
       </span>
     </div>
   );
@@ -395,6 +478,8 @@ function DetailPane({
   onSaveBody,
   onSwitchVariant,
   onCreateVariant,
+  onEditRule,
+  onReplay,
 }: {
   entry: CapturedRequest;
   /** 命中的规则。只有已 Mock 的请求才有 —— 有它才谈得上「就地编辑」 */
@@ -404,6 +489,8 @@ function DetailPane({
   onSaveBody: (ruleId: string, variantId: string, body: string) => Promise<boolean>;
   onSwitchVariant: (ruleId: string, variantId: string) => void;
   onCreateVariant: (rule: Rule) => void;
+  onEditRule: (rule: Rule) => void;
+  onReplay: (entry: CapturedRequest) => Promise<{ ok: boolean; message: string }>;
 }) {
   const [copied, setCopied] = useState(false);
   /**
@@ -419,6 +506,8 @@ function DetailPane({
   const [dirtyBody, setDirtyBody] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [replayState, setReplayState] = useState<'idle' | 'sending'>('idle');
+  const [replayResult, setReplayResult] = useState<{ message: string; bad: boolean } | null>(null);
 
   const variant = rule?.variants.find((v) => v.id === rule.activeVariantId) ?? rule?.variants[0];
   const editable = !!rule && !!variant;
@@ -472,6 +561,14 @@ function DetailPane({
     }
   };
 
+  const replay = async () => {
+    setReplayState('sending');
+    const result = await onReplay(entry);
+    setReplayState('idle');
+    setReplayResult({ message: result.message, bad: !result.ok });
+    setTimeout(() => setReplayResult(null), 3500);
+  };
+
   return (
     <div className="detail">
       <div className="detail__head">
@@ -493,6 +590,14 @@ function DetailPane({
             转为 Mock
           </button>
         )}
+        {rule && (
+          <button className="tiny" onClick={() => onEditRule(rule)}>
+            完整编辑
+          </button>
+        )}
+        <button className="tiny" disabled={replayState === 'sending'} onClick={replay}>
+          {replayState === 'sending' ? '发送中…' : '重新发送'}
+        </button>
         <button style={{ padding: '2px 7px', fontSize: 11 }} onClick={onClose}>
           关闭
         </button>
@@ -511,6 +616,11 @@ function DetailPane({
           )}
           {requestVariantChanged && variant && <KV k="当前已切换为" v={variant.name} />}
           <KV k="URL" v={entry.url} mono wrap />
+          {replayResult && (
+            <div className={`banner ${replayResult.bad ? 'banner-bad' : 'banner-ok'}`} style={{ marginTop: 8, fontSize: 11 }}>
+              {replayResult.message}
+            </div>
+          )}
 
           {entry.bodyGen && (
             <div style={{ marginTop: 10 }}>
@@ -536,6 +646,16 @@ function DetailPane({
 
         {/* ── 右：响应体，占满剩余空间 ── */}
         <div className="detail__body">
+          <div className="trace-rail" aria-label="请求命中链路">
+            <TraceStep label="Request" value={entry.method} />
+            <TraceStep label="Rule" value={entry.ruleName ?? '未命中'} muted={!entry.mocked} />
+            <TraceStep label="Variant" value={entry.variantName ?? '—'} muted={!entry.variantName} />
+            <TraceStep
+              label="Result"
+              value={entry.status == null ? '—' : String(entry.status)}
+              bad={!!entry.status && entry.status >= 400}
+            />
+          </div>
           <div className="detail__bodyhead">
             {editable ? (
               <div className="bodytype" style={{ margin: 0 }}>
@@ -632,6 +752,15 @@ function DetailPane({
         </div>
       </div>
     </div>
+  );
+}
+
+function TraceStep({ label, value, muted, bad }: { label: string; value: string; muted?: boolean; bad?: boolean }) {
+  return (
+    <span className={`trace-step${muted ? ' is-muted' : ''}${bad ? ' is-bad' : ''}`}>
+      <i />
+      <span><small>{label}</small><b title={value}>{value}</b></span>
+    </span>
   );
 }
 
