@@ -3,7 +3,7 @@
 > 类型：Guide
 > 状态：Active
 > Owner：项目维护者
-> 更新：2026-08-07 · 面向**使用者**
+> 更新：2026-09-01 · 面向**使用者**
 > 想知道它怎么实现的、为什么这么设计 → [MCP Server](../architecture/mcp-server.md)
 
 接上 MCP 之后，你对 AI 说一句「页面没数据，帮我 mock 一下」就完事了 ——
@@ -36,67 +36,49 @@
 | --- | --- | --- |
 | 端口 | 设置页的「端口」 | `env.MOCK_STUDIO_PORT` |
 | 配对码 | 设置页的「配对码」 | `env.MOCK_STUDIO_TOKEN` |
-| 程序路径 | —— | `args[0]`，指向**编译产物** |
+| 程序入口 | —— | `command` + `args`，指向 MCP Server |
+
+> 程序入口现在有**两种形态**：
+> `npx -y mock-studio-mcp`（已发布到 npm，配置里没有任何路径）或
+> 仓库里的零依赖单文件 `mcp-server/dist/bundle/mock-studio-mcp.mjs`。
+> 下面的接入方式都会帮你自动选对，不需要自己操心。
 
 ---
 
-## 1. 五分钟接上
+## 1. 一分钟接上
 
-### ① 编译 Server（只需一次）
-
-```bash
-cd mcp-server && npm install && npm run build
-```
-
-### ② 扩展侧：生成配对码
+### ① 扩展侧：开启桥
 
 规则管理页右上角 **MCP** → 打开「启用 MCP 桥」→ 配对码自动生成 → **点保存**。
 
 > 不点保存设置不落库，桥不会去连，状态会一直停在「未启用」。
 
-### ③ 客户端侧：写配置
+### ② 客户端侧：任选一种接入
 
-点「复制整段」拿到配置，粘进 MCP 客户端：
+面板上「接入 AI 客户端」区给出了所有方式，配对码都已内嵌：
 
-```json
-{
-  "mcpServers": {
-    "mock-studio": {
-      "command": "node",
-      "args": ["<绝对路径>/chrome-mock-extension/mcp-server/dist/mcp-server/src/index.js"],
-      "env": { "MOCK_STUDIO_TOKEN": "……", "MOCK_STUDIO_PORT": "8787" }
-    }
-  }
-}
+| 方式 | 适合谁 | 做什么 |
+| --- | --- | --- |
+| **一键安装按钮** | Cursor / VS Code | 点按钮 → 客户端弹确认框 → 同意。完事 |
+| **`claude mcp add` 命令** | Claude Code | 复制面板上那行命令，在终端跑一次 |
+| **`install` 安装器** | 本地仓库版 / 其他客户端 | 在仓库根目录跑面板里那条命令：自动检测 Claude Code / Cursor / VS Code / Windsurf / Claude Desktop，**配对码只贴这一次**，全部写入，写前自动备份（`*.mock-studio.bak`） |
+| **手动 JSON** | 以上都不可用时 | 面板里折叠区有完整 JSON（npx 形态） |
+
+安装器的完整参数（`--client` 只写指定客户端、`--print` 预览不落盘等）：
+
+```bash
+node mcp-server/dist/bundle/mock-studio-mcp.mjs install --help
 ```
 
-把 `<绝对路径>` 换成真实路径。**文件放哪很关键**：
-
-| 客户端 | 放哪 |
-| --- | --- |
-| Claude Code | 你**打开会话的那个目录**的 `.mcp.json`（不是任意子目录 —— 这一点踩过坑）|
-| Cursor | `.cursor/mcp.json` 或全局 MCP 配置 |
-| 其他 | 找它文档里的 `mcpServers` 配置位置 |
-
 > ⚠️ **`.mcp.json` 要加进 `.gitignore`**。里面那串配对码等同于本机 mock 的访问口令。
-> 配置模板在设置页随时能复制，不需要靠 git 分发。
+> 配置随时能从设置页重新生成，不需要靠 git 分发。
 
-### ④ 重启客户端
+### ③ 重启客户端
 
 MCP Server 是被客户端**拉起来**的（stdio 子进程），不重启读不到新配置。
 Claude Code 首次会弹**信任提示**，要点同意 —— 这是它对项目级 `.mcp.json` 的安全机制。
 
-> **`args` 里到底填什么**：编译产物的入口文件，绝对路径：
-> ```
-> <仓库根目录>/mcp-server/dist/mcp-server/src/index.js
-> ```
-> 仓库根目录在项目里执行 `pwd` 就能拿到。
->
-> 注意**不是** `src/index.ts` —— Node 跑不了 TypeScript。
-> 路径里 `dist/` 后面又出现一次 `mcp-server/src/`，是因为 tsconfig 的 `rootDir`
-> 指向上级目录（为了能直接编译 `../src/core` 复用业务逻辑），产物就多了一层。看着怪，但是对的。
-
-### ⑤ 确认
+### ④ 确认
 
 回到扩展设置页，状态应显示 **● 已连接**。或在 Claude Code 里敲 `/mcp`。
 
@@ -303,7 +285,7 @@ Claude Code、Cursor、JoyCode 可以**同时**连着同一个扩展，配置完
 看 Server 日志：Claude Code 里 `/mcp`，或直接手动跑一次
 
 ```bash
-MOCK_STUDIO_TOKEN=你的配对码 node mcp-server/dist/mcp-server/src/index.js
+MOCK_STUDIO_TOKEN=你的配对码 node mcp-server/dist/bundle/mock-studio-mcp.mjs
 ```
 
 （日志全在 stderr —— stdout 是 MCP 协议专用的，往里写一个字符就会把协议流冲坏。）

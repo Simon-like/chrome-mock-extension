@@ -40,6 +40,17 @@
 
 ## 快速开始
 
+### 方式 A：GitHub Release（推荐，不用构建）
+
+1. 在 [Releases](../../releases) 下载 `mock-studio-extension-v*.zip` 并解压
+2. 打开 `chrome://extensions` → 开启右上角 **开发者模式**
+3. 点 **加载已解压的扩展程序**，选择解压出来的目录
+4. **刷新你要调试的页面** —— 拦截脚本只在页面加载时注入
+
+装好后扩展会自动打开引导页，跟着三步走即可。
+
+### 方式 B：从源码构建
+
 ```bash
 git clone git@github.com:Simon-like/chrome-mock-extension.git
 cd chrome-mock-extension
@@ -47,12 +58,7 @@ npm install
 npm run build
 ```
 
-装进 Chrome：
-
-1. 打开 `chrome://extensions`
-2. 开启右上角 **开发者模式**
-3. 点 **加载已解压的扩展程序**，选择 **`dist/`** 目录 ← 注意是 `dist/`，不是项目根目录
-4. **刷新你要调试的页面** —— 拦截脚本只在页面加载时注入
+然后同上，加载 **`dist/`** 目录（注意是 `dist/`，不是项目根目录）。
 
 想确认装好没有：用浏览器打开项目里的 `testbed/index.html`，点「检查引擎」。
 
@@ -173,14 +179,24 @@ AI  → list_recent_requests(only_unmocked: true)
 **读侧才是关键**。写规则 AI 本来就会，剪贴板导入也能凑合；
 真正没有替代品的是**让 AI 看到页面实际发了哪些请求** —— 这是 GUI 工具给不了的。
 
-```bash
-cd mcp-server && npm install && npm run build
-```
+**接上只需要一分钟，配对码只需粘贴一次：**
 
-然后在规则管理页点右上角 **MCP** → 开启 → 复制那段客户端配置，粘进 Claude Code 的
-`.mcp.json`（或 Cursor 的 MCP 配置）。配对码会自动生成。
+在规则管理页点右上角 **MCP** → 开启 → 然后任选一种：
 
-**五分钟接上的完整步骤、常用说法、排查表 → [MCP 使用指南](./docs/guides/mcp-usage.md)**
+| 你的客户端 | 操作 |
+| --- | --- |
+| Cursor / VS Code | 点面板里的 **一键安装按钮**（配对码已内嵌，弹确认框同意即可） |
+| Claude Code | 复制面板里的一行 `claude mcp add` 命令，在终端跑 |
+| 其他 / 本地仓库版 | 在仓库根目录跑面板里那条 `install` 命令 —— 自动检测所有已安装客户端并全部写入，写前自动备份 |
+
+接入后**重启对应的 AI 客户端**生效。
+
+> 不用再做的事：手动 `pwd` 核对路径、把配对码逐个客户端贴 N 遍、关心 `dist/` 有几层目录。
+> MCP Server 已发布到 npm（[`mock-studio-mcp`](https://www.npmjs.com/package/mock-studio-mcp)），
+> 客户端配置里没有任何本地路径，只有 `npx -y mock-studio-mcp`；
+> 本地仓库版则是零依赖单文件 `mcp-server/dist/bundle/mock-studio-mcp.mjs`。
+
+**一分钟接上的完整步骤、常用说法、排查表 → [MCP 使用指南](./docs/guides/mcp-usage.md)**
 
 > **安全**：只监听 `127.0.0.1`；`Origin` 必须是 `chrome-extension://`（挡掉所有网页）；
 > 配对码挡掉本机其他进程。出给 AI 的数据**强制脱敏且不可关闭** ——

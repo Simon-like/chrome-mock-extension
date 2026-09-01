@@ -154,25 +154,29 @@ URL 查询参数和响应体都过一遍；非 JSON 文本也有兜底，不会�
 ### 一次性设置
 
 ```bash
-cd mcp-server && npm install && npm run build
+cd mcp-server && npm install && npm run build   # tsc + 零依赖单文件 bundle
 ```
 
 扩展设置页（Options 右上角 **MCP** 按钮）→ 打开「启用 MCP 桥」→ 会自动生成配对码
-→ 点「复制整段」拿到可直接粘贴的客户端配置：
+→ 用面板「接入 AI 客户端」区的任一方式接入：
+
+- **一键安装按钮**（Cursor / VS Code deeplink，配对码已内嵌）
+- **`claude mcp add` 命令**（Claude Code）
+- **`install` 安装器**：`node dist/bundle/mock-studio-mcp.mjs install --token <配对码>` ——
+  自动检测各客户端配置并全部写入，写前备份
+- 手动 JSON（npx 形态）：
 
 ```json
 {
   "mcpServers": {
     "mock-studio": {
-      "command": "node",
-      "args": ["<绝对路径>/chrome-mock-extension/mcp-server/dist/mcp-server/src/index.js"],
-      "env": { "MOCK_STUDIO_TOKEN": "……", "MOCK_STUDIO_PORT": "8787" }
+      "command": "npx",
+      "args": ["-y", "mock-studio-mcp"],
+      "env": { "MOCK_STUDIO_TOKEN": "……" }
     }
   }
 }
 ```
-
-粘进 Claude Code 的 `.mcp.json`（或 Cursor 的 MCP 配置），把 `<绝对路径>` 换成真实路径。
 
 设置页里有实时连接状态，连上会显示「● 已连接」。
 
