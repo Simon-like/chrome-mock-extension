@@ -94,19 +94,41 @@ export function McpSettings({ settings, onSave, onClose }: Props) {
     if (next && !token) setToken(generateToken());
   };
 
-  const clientConfig = JSON.stringify(
-    {
-      mcpServers: {
-        'mock-studio': {
-          command: 'node',
-          args: ['<绝对路径>/chrome-mock-extension/mcp-server/dist/mcp-server/src/index.js'],
-          env: { MOCK_STUDIO_TOKEN: token || '<先在上面生成配对码>', MOCK_STUDIO_PORT: port },
-        },
-      },
+  /**
+   * 接入配置一律用 npx 形态 —— 里面没有任何本地路径，
+   * 配对码也已经内嵌，用户拿到就能用，不用再「核对路径再粘贴」。
+   * 本地仓库版（未发布 npm）走 install 子命令，由它自己填绝对路径。
+   */
+  const npmEntry: Record<string, unknown> = {
+    command: 'npx',
+    args: ['-y', 'mock-studio-mcp'],
+    env: {
+      MOCK_STUDIO_TOKEN: token || '<先在上面生成配对码>',
+      ...(port !== '8787' ? { MOCK_STUDIO_PORT: port } : {}),
     },
-    null,
-    2,
-  );
+  };
+  const manualConfig = JSON.stringify({ mcpServers: { 'mock-studio': npmEntry } }, null, 2);
+
+  /** Cursor / VS Code 的一键安装 deeplink：点链接 → 客户端弹确认 → 完成 */
+  const cursorDeeplink = `cursor://anysphere.cursor-deeplink/mcp/install?name=mock-studio&config=${btoa(
+    JSON.stringify(npmEntry),
+  )}`;
+  const vscodeDeeplink = `vscode:mcp/install?${encodeURIComponent(
+    JSON.stringify({ name: 'mock-studio', type: 'stdio', ...npmEntry }),
+  )}`;
+
+  /** Claude Code 的官方 CLI 写法 */
+  const claudeCmd =
+    `claude mcp add mock-studio` +
+    ` -e MOCK_STUDIO_TOKEN=${token || '<配对码>'}` +
+    (port !== '8787' ? ` -e MOCK_STUDIO_PORT=${port}` : '') +
+    ` -- npx -y mock-studio-mcp`;
+
+  /** 本地仓库版：安装器自己知道绝对路径，配对码只贴这一次，写进所有客户端 */
+  const localInstallCmd =
+    `node mcp-server/dist/bundle/mock-studio-mcp.mjs install` +
+    ` --token ${token || '<配对码>'}` +
+    (port !== '8787' ? ` --port ${port}` : '');
 
   return (
     <>
@@ -171,41 +193,92 @@ export function McpSettings({ settings, onSave, onClose }: Props) {
                 />
               </div>
 
-              {/* ── 可直接粘贴的客户端配置 ── */}
+              {/* ── 接入 AI 客户端：能一键就不手贴 ── */}
               <div style={{ marginBottom: 14 }}>
-                <div className="row" style={{ justifyContent: 'space-between', marginBottom: 4 }}>
-                  <label style={{ margin: 0 }}>MCP 客户端配置</label>
-                  <button className="tiny" onClick={() => copy(clientConfig, 'config')}>
-                    {copied === 'config' ? '已复制' : '复制整段'}
+                <label style={{ display: 'block', marginBottom: 6 }}>接入 AI 客户端</label>
+
+                {/* 一键安装：deeplink 里已带配对码，客户端弹个确认框就完事 */}
+                <div className="row" style={{ gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                  <a className="installbtn" href={cursorDeeplink}>
+                    一键装进 Cursor
+                  </a>
+                  <a className="installbtn" href={vscodeDeeplink}>
+                    一键装进 VS Code
+                  </a>
+                </div>
+                <div className="faint" style={{ fontSize: 10.5, marginBottom: 12, lineHeight: 1.6 }}>
+                  点按钮 → 对应客户端弹确认框 → 同意即完成（配对码已内嵌，无需再填）。
+                  点了没反应说明没装该客户端，或它还没注册协议（先启动一次再点）。
+                </div>
+
+                {/* Claude Code：官方 CLI 一行命令 */}
+                <label>Claude Code</label>
+                <div className="row" style={{ gap: 6 }}>
+                  <input
+                    className="mono"
+                    readOnly
+                    value={claudeCmd}
+                    onFocus={(e) => e.target.select()}
+                    style={{ fontSize: 11 }}
+                  />
+                  <button className="tiny" onClick={() => copy(claudeCmd, 'claude')}>
+                    {copied === 'claude' ? '已复制' : '复制'}
                   </button>
                 </div>
-                <pre className="mono codeblock">{clientConfig}</pre>
-                <ol className="faint hintlist">
-                  <li>
-                    先编译一次：在 <code className="mono">mcp-server/</code> 里跑{' '}
-                    <code className="mono">npm install &amp;&amp; npm run build</code>
-                  </li>
-                  <li>
-                    把 <code className="mono">&lt;绝对路径&gt;</code> 换成本仓库的真实路径 ——
-                    在仓库根目录执行 <code className="mono">pwd</code> 就是它。
-                    <b> args 里填的是编译产物 </b>
-                    <code className="mono">dist/…/index.js</code>，不是源码 <code className="mono">.ts</code>
-                  </li>
-                  <li>
-                    把整段粘进 MCP 客户端的配置文件：Claude Code 是
-                    <b> 你打开会话那个目录 </b>的 <code className="mono">.mcp.json</code>
-                    （放到子目录不生效），Cursor 是 <code className="mono">.cursor/mcp.json</code>
-                  </li>
-                  <li>
-                    <b>重启 MCP 客户端</b> —— Server 是它拉起来的子进程，不重启读不到新配置。
-                    Claude Code 首次会弹信任提示，要同意
-                  </li>
-                </ol>
-                <div className="banner banner-warn" style={{ fontSize: 10.5, marginTop: 6, lineHeight: 1.6 }}>
-                  ⚠ 以后改了 <code className="mono">mcp-server/</code> 或{' '}
-                  <code className="mono">src/core/</code> 的代码，要
-                  <b>重新 build 并重启客户端</b>才会生效 —— 客户端跑的是编译产物，不是源码。
+
+                {/* 本地仓库版 / 其他客户端：安装器一次写全部 */}
+                <div style={{ marginTop: 12 }}>
+                  <label>
+                    从 GitHub 下载的本地版
+                    <span className="faint" style={{ fontWeight: 400 }}>
+                      {' '}
+                      · 一条命令写进所有已安装的客户端，不用自己核对路径
+                    </span>
+                  </label>
+                  <div className="row" style={{ gap: 6 }}>
+                    <input
+                      className="mono"
+                      readOnly
+                      value={localInstallCmd}
+                      onFocus={(e) => e.target.select()}
+                      style={{ fontSize: 11 }}
+                    />
+                    <button className="tiny" onClick={() => copy(localInstallCmd, 'local')}>
+                      {copied === 'local' ? '已复制' : '复制'}
+                    </button>
+                  </div>
+                  <div className="faint" style={{ fontSize: 10.5, marginTop: 4, lineHeight: 1.6 }}>
+                    在<b>仓库根目录</b>跑这条命令：自动检测 Claude Code / Cursor / VS Code /
+                    Windsurf / Claude Desktop 并全部写入，写前自动备份原配置。
+                  </div>
                 </div>
+
+                {/* 手动 JSON：给 deeplink 和 CLI 都不可用时兜底 */}
+                <details style={{ marginTop: 12 }}>
+                  <summary style={{ fontSize: 11.5, cursor: 'pointer', color: 'var(--muted)' }}>
+                    手动复制 JSON 配置（其他客户端）
+                  </summary>
+                  <div className="row" style={{ justifyContent: 'flex-end', margin: '6px 0 4px' }}>
+                    <button className="tiny" onClick={() => copy(manualConfig, 'config')}>
+                      {copied === 'config' ? '已复制' : '复制整段'}
+                    </button>
+                  </div>
+                  <pre className="mono codeblock">{manualConfig}</pre>
+                  <ol className="faint hintlist">
+                    <li>
+                      这段配置用 <code className="mono">npx -y mock-studio-mcp</code> 启动，
+                      要求本包已发布到 npm；本地仓库版请用上面那条 install 命令
+                    </li>
+                    <li>
+                      粘进客户端的 MCP 配置文件：Claude Code 是<b>打开会话那个目录</b>的
+                      <code className="mono"> .mcp.json</code>，Cursor 是
+                      <code className="mono"> ~/.cursor/mcp.json</code>
+                    </li>
+                    <li>
+                      <b>重启客户端</b> —— MCP Server 是它拉起的子进程，不重启读不到新配置
+                    </li>
+                  </ol>
+                </details>
               </div>
 
               {/* ── 读侧 ── */}

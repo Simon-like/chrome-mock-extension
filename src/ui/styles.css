@@ -223,6 +223,26 @@ button.tiny {
   padding: 2px 7px;
   font-size: 11px;
 }
+
+/* 一键安装 deeplink 按钮（本质是 <a>，外观对齐 button.primary） */
+a.installbtn {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 11px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: var(--accent-grad);
+  color: #fff;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(67, 97, 238, 0.28);
+  transition: filter 0.12s;
+}
+a.installbtn:hover {
+  filter: brightness(1.07);
+}
 button.icon {
   padding: 3px 7px;
   font-size: 11px;
@@ -464,6 +484,22 @@ label {
 .banner-bad {
   background: var(--bad-soft);
   color: var(--bad);
+}
+
+/* 首次安装的三步上手引导（Options 页顶部） */
+.welcome-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 10px 14px 0;
+  padding: 12px 14px;
+  background: var(--accent-soft, rgba(67, 97, 238, 0.08));
+  border: 1px solid var(--border-strong);
+  font-size: 12px;
+  color: var(--fg);
+}
+.welcome-banner button {
+  flex-shrink: 0;
 }
 .banner-ok {
   background: var(--ok-soft);

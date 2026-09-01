@@ -115,8 +115,17 @@ chrome.runtime.onConnect.addListener((port) => {
 // 生命周期与快捷键
 // ═══════════════════════════════════════════════════════════
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
   void updateBadge();
+  // 首次安装打开引导页 —— 从 GitHub 下载装上的用户最容易在
+  // 「接下来干嘛」这一步流失，直接把他带到带引导横幅的规则管理页。
+  // options_page 的路径以 manifest 为准，构建工具改名也不会写死
+  if (details.reason === 'install') {
+    const optionsPage = chrome.runtime.getManifest().options_page;
+    if (optionsPage) {
+      void chrome.tabs.create({ url: chrome.runtime.getURL(optionsPage) + '?welcome=1' });
+    }
+  }
 });
 
 chrome.runtime.onStartup.addListener(() => {

@@ -42,6 +42,10 @@ export function Options() {
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
   const [mcpOpen, setMcpOpen] = useState(false);
   const [appSettingsOpen, setAppSettingsOpen] = useState(false);
+  /** 首次安装由 onInstalled 带 ?welcome=1 打开本页 —— 展示三步上手引导 */
+  const [welcome, setWelcome] = useState(
+    () => new URLSearchParams(window.location.search).has('welcome'),
+  );
   /** 待确认删除的对象。删容器是不可逆操作，必须让用户明确选内容怎么办 */
   const [deleting, setDeleting] = useState<
     | { kind: 'group'; id: string }
@@ -366,6 +370,36 @@ export function Options() {
       />
 
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        {welcome && (
+          <div className="banner welcome-banner">
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <strong>欢迎使用 Mock Studio —— 三步上手：</strong>
+              <ol className="faint" style={{ margin: '6px 0 0', paddingLeft: 18, lineHeight: 1.8 }}>
+                <li>
+                  随便打开一个页面，点工具栏的 Mock Studio 图标，确认请求已能被看到
+                </li>
+                <li>
+                  想让 AI 直接帮你写 mock？点右上角 <b>MCP</b> → 启用桥 →
+                  用「一键安装」或 install 命令接入你的 AI 客户端
+                </li>
+                <li>对 AI 说一句「页面没数据，帮我 mock 一下」，刷新页面看效果</li>
+              </ol>
+            </div>
+            <button className="primary" onClick={() => setMcpOpen(true)}>
+              接入 AI（MCP）
+            </button>
+            <button
+              className="ghost"
+              onClick={() => {
+                setWelcome(false);
+                // 去掉 ?welcome=1，刷新后不再出现
+                window.history.replaceState(null, '', window.location.pathname);
+              }}
+            >
+              知道了
+            </button>
+          </div>
+        )}
         <div className="main__head">
           <div className="row" style={{ gap: 9 }}>
             <h1>{activeProject?.name ?? '未归档'}</h1>
