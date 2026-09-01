@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Mock Studio MCP Server
  *
@@ -17,6 +16,10 @@
  * 配置（都通过环境变量）：
  *   MOCK_STUDIO_TOKEN  配对码，必填。在扩展设置页复制
  *   MOCK_STUDIO_PORT   WebSocket 端口，默认 8787，要和扩展设置一致
+ *
+ * 子命令：
+ *   install   把本 server 一键写进各 AI 客户端的 MCP 配置
+ *             （配对码只贴一次；详见 install.ts 顶部注释）
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -27,7 +30,7 @@ import { registerTools } from './tools.js';
 import { registerPrompts } from './prompts.js';
 import { DEFAULT_BRIDGE_PORT } from '../../src/core/types.js';
 
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 
 /** 日志一律 stderr —— stdout 是 MCP 协议专用的 */
 function log(...args: unknown[]): void {
@@ -35,14 +38,24 @@ function log(...args: unknown[]): void {
 }
 
 async function main(): Promise<void> {
+  // install 子命令不是 MCP 会话：它操作的是各客户端的配置文件，
+  // stdout 可以随便写。要在建桥、建 server 之前就分流掉。
+  if (process.argv[2] === 'install') {
+    const { runInstall } = await import('./install.js');
+    await runInstall(process.argv.slice(3));
+    return;
+  }
+
   const token = process.env.MOCK_STUDIO_TOKEN ?? '';
   const port = Number(process.env.MOCK_STUDIO_PORT) || DEFAULT_BRIDGE_PORT;
 
   if (!token) {
     log(
       '缺少 MOCK_STUDIO_TOKEN。\n' +
-        '  打开 Chrome 扩展 Mock Studio 的设置页 → MCP 桥 → 复制配对码，\n' +
-        '  填进 MCP 客户端配置的 env.MOCK_STUDIO_TOKEN。\n' +
+        '  打开 Chrome 扩展 Mock Studio 的设置页 → MCP 桥 → 复制配对码。\n' +
+        '  最省事的方式：用配对码跑一遍 `mock-studio-mcp install --token <配对码>`，\n' +
+        '  它会自动写进所有已安装的 AI 客户端配置；\n' +
+        '  手动配置则填进 env.MOCK_STUDIO_TOKEN。\n' +
         '  没有配对码的话，本机任何进程都能连上来改你的 mock 规则。',
     );
     process.exit(1);
