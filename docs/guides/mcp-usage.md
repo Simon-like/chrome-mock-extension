@@ -61,13 +61,13 @@
 | --- | --- | --- |
 | **一键安装按钮** | Cursor / VS Code | 点按钮 → 客户端弹确认框 → 同意。完事 |
 | **`claude mcp add` 命令** | Claude Code | 复制面板上那行命令，在终端跑一次 |
-| **`install` 安装器** | 本地仓库版 / 其他客户端 | 在仓库根目录跑面板里那条命令：自动检测 Claude Code / Cursor / VS Code / Windsurf / Claude Desktop，**配对码只贴这一次**，全部写入，写前自动备份（`*.mock-studio.bak`） |
+| **`install` 安装器** | 其他客户端 | 任意目录跑 `npx -y mock-studio-mcp install --token <配对码>`（本地仓库版则跑面板里那条 `node … install` 命令）：自动检测 Claude Code / Cursor / VS Code / Windsurf / Claude Desktop，**配对码只贴这一次**，全部写入，写前自动备份（`*.mock-studio.bak`） |
 | **手动 JSON** | 以上都不可用时 | 面板里折叠区有完整 JSON（npx 形态） |
 
 安装器的完整参数（`--client` 只写指定客户端、`--print` 预览不落盘等）：
 
 ```bash
-node mcp-server/dist/bundle/mock-studio-mcp.mjs install --help
+npx -y mock-studio-mcp install --help
 ```
 
 > ⚠️ **`.mcp.json` 要加进 `.gitignore`**。里面那串配对码等同于本机 mock 的访问口令。

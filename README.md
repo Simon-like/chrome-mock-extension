@@ -187,13 +187,27 @@ AI  → list_recent_requests(only_unmocked: true)
 | --- | --- |
 | Cursor / VS Code | 点面板里的 **一键安装按钮**（配对码已内嵌，弹确认框同意即可） |
 | Claude Code | 复制面板里的一行 `claude mcp add` 命令，在终端跑 |
-| 其他 / 本地仓库版 | 在仓库根目录跑面板里那条 `install` 命令 —— 自动检测所有已安装客户端并全部写入，写前自动备份 |
+| 其他客户端 | 任意目录跑 `npx -y mock-studio-mcp install --token <配对码>` —— 自动检测所有已安装客户端并全部写入，写前自动备份 |
+| 本地仓库版（未走 npm） | 在仓库根目录跑面板里那条 `install` 命令，效果同上 |
 
 接入后**重启对应的 AI 客户端**生效。
 
+> 客户端配置长这样 —— **没有任何本地路径**（要求 Node 18+）：
+>
+> ```json
+> {
+>   "mcpServers": {
+>     "mock-studio": {
+>       "command": "npx",
+>       "args": ["-y", "mock-studio-mcp"],
+>       "env": { "MOCK_STUDIO_TOKEN": "<扩展面板里的配对码>" }
+>     }
+>   }
+> }
+> ```
+>
 > 不用再做的事：手动 `pwd` 核对路径、把配对码逐个客户端贴 N 遍、关心 `dist/` 有几层目录。
-> MCP Server 已发布到 npm（[`mock-studio-mcp`](https://www.npmjs.com/package/mock-studio-mcp)），
-> 客户端配置里没有任何本地路径，只有 `npx -y mock-studio-mcp`；
+> MCP Server 已发布到 npm（[`mock-studio-mcp`](https://www.npmjs.com/package/mock-studio-mcp)）；
 > 本地仓库版则是零依赖单文件 `mcp-server/dist/bundle/mock-studio-mcp.mjs`。
 
 **一分钟接上的完整步骤、常用说法、排查表 → [MCP 使用指南](./docs/guides/mcp-usage.md)**
