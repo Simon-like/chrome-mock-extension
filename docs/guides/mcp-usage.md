@@ -49,9 +49,10 @@
 
 ### ① 扩展侧：开启桥
 
-规则管理页右上角 **MCP** → 打开「启用 MCP 桥」→ 配对码自动生成 → **点保存**。
+规则管理页右上角 **MCP** → 打开「启用 MCP 桥」→ 配对码自动生成。
+直接使用下面的安装或复制按钮即可，它们会先保存当前设置；也可以只点「保存」稍后再接入。
 
-> 不点保存设置不落库，桥不会去连，状态会一直停在「未启用」。
+> 如果保存失败，弹窗会留在原处并提示，不会把尚未生效的配对码或端口发给客户端。
 
 ### ② 客户端侧：任选一种接入
 
@@ -59,7 +60,7 @@
 
 | 方式 | 适合谁 | 做什么 |
 | --- | --- | --- |
-| **一键安装按钮** | Cursor / VS Code | 点按钮 → 客户端弹确认框 → 同意。完事 |
+| **保存并安装按钮** | Cursor / VS Code | 点按钮 → 等待设置保存 → 客户端弹确认框 → 同意 |
 | **`claude mcp add` 命令** | Claude Code | 复制面板上那行命令，在终端跑一次 |
 | **`install` 安装器** | 其他客户端 | 任意目录跑 `npx -y mock-studio-mcp install --token <配对码>`（本地仓库版则跑面板里那条 `node … install` 命令）：自动检测 Claude Code / Cursor / VS Code / Windsurf / Claude Desktop，**配对码只贴这一次**，全部写入，写前自动备份（`*.mock-studio.bak`） |
 | **手动 JSON** | 以上都不可用时 | 面板里折叠区有完整 JSON（npx 形态） |
@@ -80,7 +81,8 @@ Claude Code 首次会弹**信任提示**，要点同意 —— 这是它对项�
 
 ### ④ 确认
 
-回到扩展设置页，状态应显示 **● 已连接**。或在 Claude Code 里敲 `/mcp`。
+回到扩展设置页，状态应显示 **● 已连接**，并在 AI 里问一句「当前页面有哪些请求」验证首次工具调用。
+扩展的「已连接」只代表扩展已连到本地桥；Claude Code 里也可以敲 `/mcp` 检查客户端侧状态。
 
 ---
 
@@ -180,9 +182,9 @@ cd mcp-server && npm run build     # ① 重新编译
 
 | 工具 | 说明 |
 | --- | --- |
-| `get_page_context` | **首选入口**：一次读取状态、关键异常/未 Mock 请求、相关规则和下一步；完整 body 再按需取 |
-| `list_recent_requests` | 页面最近的请求，最新在前。支持 `only_unmocked` / `url_filter` |
-| `get_request_detail` | 单条请求的完整响应体 |
+| `get_page_context` | **首选入口**：只读最后聚焦窗口的活动标签页，返回页面、状态、关键异常/未 Mock 请求、相关规则和下一步 |
+| `list_recent_requests` | 全部标签页最近的请求，最新在前。支持 `only_unmocked` / `url_filter` |
+| `get_request_detail` | 默认 `schema` 返回 JSON 结构摘要；`sample` / `full` 显式读原文，单次最多 64 KiB，用 `nextCursor` 续读 |
 | `list_rules` | 现有规则与变体 |
 | `list_shell_templates` | 可用的响应外壳 |
 | `get_status` | 总开关、生效规则数、读侧是否可用 |

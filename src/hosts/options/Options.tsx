@@ -631,10 +631,10 @@ export function Options() {
       {mcpOpen && (
         <McpSettings
           settings={store.settings}
-          onSave={(patch) => {
-            void run({ type: 'UPDATE_SETTINGS', payload: { patch } }).then((res) => {
-              if (res.ok) flash(patch.mcpEnabled ? 'MCP 设置已保存' : 'MCP 桥已关闭');
-            });
+          onSave={async (patch) => {
+            const res = await run({ type: 'UPDATE_SETTINGS', payload: { patch } });
+            if (res.ok) flash(patch.mcpEnabled ? 'MCP 设置已保存' : 'MCP 桥已关闭');
+            return res.ok;
           }}
           onClose={() => setMcpOpen(false)}
         />

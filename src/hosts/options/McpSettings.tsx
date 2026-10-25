@@ -10,7 +10,7 @@
  * 自己拼环境变量。
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Settings } from '@core/types.js';
 import { Switch } from '@ui/Switch.js';
 
@@ -23,7 +23,8 @@ export type BridgeStatus =
 
 interface Props {
   settings: Settings;
-  onSave: (patch: Partial<Settings>) => void;
+  /** 必须等设置真正落库后才能安装或复制配置；false 表示保留弹窗并显示错误 */
+  onSave: (patch: Partial<Settings>) => Promise<boolean>;
   onClose: () => void;
 }
 
@@ -42,6 +43,10 @@ export function McpSettings({ settings, onSave, onClose }: Props) {
   const [whitelistText, setWhitelistText] = useState(settings.aiHostWhitelist.join('\n'));
   const [status, setStatus] = useState<BridgeStatus>({ state: 'off' });
   const [copied, setCopied] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  /** 同步锁防止双击在 React 重渲染前触发两次保存和两次跳转 */
+  const savingRef = useRef(false);
 
   const whitelist = whitelistText
     .split('\n')
@@ -76,16 +81,47 @@ export function McpSettings({ settings, onSave, onClose }: Props) {
     }
   };
 
-  const save = () => {
+  const saveChanges = async (): Promise<boolean> => {
+    if (savingRef.current) return false;
+    savingRef.current = true;
+    setSaving(true);
+    setSaveError(null);
     const p = Number(port);
-    onSave({
-      mcpEnabled: enabled,
-      mcpPort: Number.isFinite(p) && p > 0 && p < 65536 ? p : settings.mcpPort,
-      mcpToken: token,
-      aiReadEnabled: readEnabled,
-      aiHostWhitelist: whitelist,
-    });
-    onClose();
+    try {
+      const ok = await onSave({
+        mcpEnabled: enabled,
+        mcpPort: Number.isFinite(p) && p > 0 && p < 65536 ? p : settings.mcpPort,
+        mcpToken: token,
+        aiReadEnabled: readEnabled,
+        aiHostWhitelist: whitelist,
+      });
+      if (!ok) setSaveError('设置保存失败，请检查扩展后台连接后重试。');
+      return ok;
+    } catch (e) {
+      setSaveError(`设置保存失败：${(e as Error).message}`);
+      return false;
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
+
+  const save = async () => {
+    if (await saveChanges()) onClose();
+  };
+
+  /** 所有安装与复制入口共用同一条“先落库，再出配置”的路径 */
+  const saveAndRun = async (action: () => void | Promise<void>) => {
+    if (savingRef.current || !(await saveChanges())) return;
+    try {
+      await action();
+    } catch (e) {
+      setSaveError(`设置已保存，但操作未完成：${(e as Error).message}`);
+    }
+  };
+
+  const close = () => {
+    if (!savingRef.current) onClose();
   };
 
   /** 开桥必须有配对码 —— 没有的话直接生成一个，不让用户面对一个「为什么连不上」的谜 */
@@ -132,11 +168,11 @@ export function McpSettings({ settings, onSave, onClose }: Props) {
 
   return (
     <>
-      <div className="modal__backdrop" onClick={onClose} />
+      <div className="modal__backdrop" onClick={close} />
       <div className="modal modal--wide">
         <div className="modal__head">
           <strong style={{ fontSize: 13 }}>MCP 桥 —— 让 AI 直接操作你的 mock</strong>
-          <button onClick={onClose}>关闭</button>
+          <button onClick={close} disabled={saving}>关闭</button>
         </div>
 
         <div className="modal__body">
@@ -166,7 +202,11 @@ export function McpSettings({ settings, onSave, onClose }: Props) {
                 </label>
                 <div className="row" style={{ gap: 6 }}>
                   <input className="mono" value={token} readOnly style={{ fontSize: 11.5 }} />
-                  <button className="tiny" onClick={() => copy(token, 'token')}>
+                  <button
+                    className="tiny"
+                    disabled={saving}
+                    onClick={() => void saveAndRun(() => copy(token, 'token'))}
+                  >
                     {copied === 'token' ? '已复制' : '复制'}
                   </button>
                   <button
@@ -197,17 +237,25 @@ export function McpSettings({ settings, onSave, onClose }: Props) {
               <div style={{ marginBottom: 14 }}>
                 <label style={{ display: 'block', marginBottom: 6 }}>接入 AI 客户端</label>
 
-                {/* 一键安装：deeplink 里已带配对码，客户端弹个确认框就完事 */}
+                {/* 先保存再跳转，保证 deeplink 里的 token/port 已经在扩展侧生效 */}
                 <div className="row" style={{ gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-                  <a className="installbtn" href={cursorDeeplink}>
-                    一键装进 Cursor
-                  </a>
-                  <a className="installbtn" href={vscodeDeeplink}>
-                    一键装进 VS Code
-                  </a>
+                  <button
+                    className="installbtn"
+                    disabled={saving}
+                    onClick={() => void saveAndRun(() => window.location.assign(cursorDeeplink))}
+                  >
+                    保存并装进 Cursor
+                  </button>
+                  <button
+                    className="installbtn"
+                    disabled={saving}
+                    onClick={() => void saveAndRun(() => window.location.assign(vscodeDeeplink))}
+                  >
+                    保存并装进 VS Code
+                  </button>
                 </div>
                 <div className="faint" style={{ fontSize: 10.5, marginBottom: 12, lineHeight: 1.6 }}>
-                  点按钮 → 对应客户端弹确认框 → 同意即完成（配对码已内嵌，无需再填）。
+                  点按钮 → 先保存当前设置 → 对应客户端弹确认框（配对码已内嵌，无需再填）。
                   点了没反应说明没装该客户端，或它还没注册协议（先启动一次再点）。
                 </div>
 
@@ -221,8 +269,12 @@ export function McpSettings({ settings, onSave, onClose }: Props) {
                     onFocus={(e) => e.target.select()}
                     style={{ fontSize: 11 }}
                   />
-                  <button className="tiny" onClick={() => copy(claudeCmd, 'claude')}>
-                    {copied === 'claude' ? '已复制' : '复制'}
+                  <button
+                    className="tiny"
+                    disabled={saving}
+                    onClick={() => void saveAndRun(() => copy(claudeCmd, 'claude'))}
+                  >
+                    {copied === 'claude' ? '已复制' : '保存并复制'}
                   </button>
                 </div>
 
@@ -243,8 +295,12 @@ export function McpSettings({ settings, onSave, onClose }: Props) {
                       onFocus={(e) => e.target.select()}
                       style={{ fontSize: 11 }}
                     />
-                    <button className="tiny" onClick={() => copy(localInstallCmd, 'local')}>
-                      {copied === 'local' ? '已复制' : '复制'}
+                    <button
+                      className="tiny"
+                      disabled={saving}
+                      onClick={() => void saveAndRun(() => copy(localInstallCmd, 'local'))}
+                    >
+                      {copied === 'local' ? '已复制' : '保存并复制'}
                     </button>
                   </div>
                   <div className="faint" style={{ fontSize: 10.5, marginTop: 4, lineHeight: 1.6 }}>
@@ -259,8 +315,12 @@ export function McpSettings({ settings, onSave, onClose }: Props) {
                     手动复制 JSON 配置（其他客户端）
                   </summary>
                   <div className="row" style={{ justifyContent: 'flex-end', margin: '6px 0 4px' }}>
-                    <button className="tiny" onClick={() => copy(manualConfig, 'config')}>
-                      {copied === 'config' ? '已复制' : '复制整段'}
+                    <button
+                      className="tiny"
+                      disabled={saving}
+                      onClick={() => void saveAndRun(() => copy(manualConfig, 'config'))}
+                    >
+                      {copied === 'config' ? '已复制' : '保存并复制整段'}
                     </button>
                   </div>
                   <pre className="mono codeblock">{manualConfig}</pre>
@@ -322,9 +382,16 @@ export function McpSettings({ settings, onSave, onClose }: Props) {
           )}
         </div>
 
+        {saveError && (
+          <div className="banner banner-bad" style={{ margin: '0 16px 10px', fontSize: 11 }}>
+            {saveError}
+          </div>
+        )}
         <div className="modal__foot">
-          <button onClick={onClose}>取消</button>
-          <button className="primary" onClick={save}>保存</button>
+          <button onClick={close} disabled={saving}>取消</button>
+          <button className="primary" onClick={() => void save()} disabled={saving}>
+            {saving ? '保存中…' : '保存'}
+          </button>
         </div>
       </div>
     </>

@@ -165,10 +165,10 @@ Skill 生成的 JSON 会经过结构自愈，以下非标准写法也能被接�
 ```
 你：页面没数据，帮我 mock 一下
 
-AI  → list_recent_requests(only_unmocked: true)
-      看到 GET /api/goods/list 返回 404
-    → get_request_detail
-      确认前端在传 page / size / keyword
+AI  → get_page_context
+      在当前活动标签页看到 GET /api/goods/list 返回 404
+    → get_request_detail(body_mode: "schema")
+      用结构摘要确认前端在传 page / size / keyword
     → create_mock(kind: "virtual", body_type: "mockjs", ...)
 
 你：刷新页面 → 有数据了
@@ -181,11 +181,11 @@ AI  → list_recent_requests(only_unmocked: true)
 
 **接上只需要一分钟，配对码只需粘贴一次：**
 
-在规则管理页点右上角 **MCP** → 开启 → 然后任选一种：
+在规则管理页点右上角 **MCP** → 开启 → 然后任选一种。面板里的安装和复制按钮会先保存设置，再生成接入动作：
 
 | 你的客户端 | 操作 |
 | --- | --- |
-| Cursor / VS Code | 点面板里的 **一键安装按钮**（配对码已内嵌，弹确认框同意即可） |
+| Cursor / VS Code | 点面板里的 **保存并安装按钮**（配对码已内嵌，弹确认框同意即可） |
 | Claude Code | 复制面板里的一行 `claude mcp add` 命令，在终端跑 |
 | 其他客户端 | 任意目录跑 `npx -y mock-studio-mcp install --token <配对码>` —— 自动检测所有已安装客户端并全部写入，写前自动备份 |
 | 本地仓库版（未走 npm） | 在仓库根目录跑面板里那条 `install` 命令，效果同上 |
@@ -436,7 +436,7 @@ observedCount + mockedCount > 0        // ✅ 正确
 ```bash
 npm run dev            # 开发模式：UI 热更新 + 注入脚本自动重建
 npm run build          # 完整构建（类型检查 + 注入脚本 + 主构建）
-npm test               # 274 个单元测试
+npm test               # 289 个单元测试
 npm run typecheck      # 只做类型检查
 ```
 
@@ -464,15 +464,16 @@ npm run typecheck      # 只做类型检查
 | `tests/responder.test.ts` | 26 | 响应构造、外壳套用与识别、Capture-to-Mock 转换、动态响应集成 |
 | `tests/reducer.test.ts` | 17 | 所有 Command 的行为与纯函数性 |
 | `tests/variants.test.ts` | 18 | **变体**：切换、增删、编辑器原子保存、生效态回落 |
-| `tests/migrate.test.ts` | 18 | **v1→v2 迁移**、结构自愈、新增设置项的补齐 |
-| `tests/inject.test.ts` | 20 | **注入层**：fetch / XHR 拦截、fail-open、延迟、健壮性 |
+| `tests/migrate.test.ts` | 20 | **v1→v2 迁移**、结构自愈、新增设置项的补齐 |
+| `tests/inject.test.ts` | 23 | **注入层**：fetch / XHR 拦截、fail-open、延迟、健壮性 |
 | `tests/dynamic.test.ts` | 16 | **动态响应**：两种写法编译、执行降级、序列化边界 |
 | `tests/mockjs.test.ts` | 39 | **Mock 模板**：数量/递增/浮点规则、占位符、护栏、确定性 |
 | `tests/bodygen.test.ts` | 15 | **生成运行时**：编译缓存、连错熔断、报告去重 |
-| `tests/redact.test.ts` | 40 | **脱敏**（安全边界）：敏感键识别、JWT、URL / 响应体、白名单通配 |
+| `tests/redact.test.ts` | 41 | **脱敏**（安全边界）：敏感键识别、JWT、URL / 响应体、白名单通配 |
+| `tests/responseDetail.test.ts` | 6 | **MCP 数据面**：JSON 结构摘要、UTF-8 字节上限、游标续读 |
 
-共 **277 个单元测试**。另有 **40 项 MCP 端到端**（`cd mcp-server && npm run e2e`）：
-用假扩展冒充 Chrome 侧，验证握手、Origin/配对码拒绝、首轮上下文、读写闭环与多客户端共享。跑的是编译产物。
+共 **289 个单元测试**。另有 **44 项 MCP 端到端**（`cd mcp-server && npm run e2e`）：
+用假扩展冒充 Chrome 侧，验证握手、Origin/配对码拒绝、活动标签页隔离、响应分级读取、读写闭环与多客户端共享。跑的是编译产物。
 
 注入层测试跑在 happy-dom 里真实执行 hook 逻辑 —— 伪造 XHR 响应是全项目最容易写错的地方
 （原型上的只读 getter、事件派发时序），手工验证成本高且容易漏边界。

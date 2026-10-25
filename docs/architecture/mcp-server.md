@@ -3,8 +3,8 @@
 > 类型：Design / Architecture Reference
 > 状态：Implemented
 > Owner：项目维护者
-> 更新：2026-08-27
-> 验证：**✅ 40 项 e2e 全通**
+> 更新：2026-10-25
+> 验证：**✅ 44 项 e2e 全通**
 > 相关：[PRD-0001 §2.2](../product/prds/PRD-0001-ai-collaboration-and-virtual-endpoints.md)（L2 方案与安全清单）· [2026-08-07 交接快照 §4](../delivery/snapshots/2026-08-07-project-handoff.md)（A1–A4 架构预留）
 
 这是这个项目最初的立项理由之一，也是它跟所有竞品拉开距离的地方。
@@ -22,10 +22,10 @@
 ```
 你：页面没数据，帮我 mock 一下
 
-AI  → list_recent_requests(only_unmocked: true)
-      看到 GET /api/goods/list 返回 404
-    → get_request_detail
-      确认前端在传 page / size / keyword
+AI  → get_page_context
+      只在当前活动标签页看到 GET /api/goods/list 返回 404
+    → get_request_detail(body_mode: "schema")
+      用有界结构摘要确认前端在传 page / size / keyword
     → create_mock(kind: "virtual", body_type: "mockjs", ...)
 
 你：刷新页面 → 有数据了
@@ -64,7 +64,8 @@ AI  → list_recent_requests(only_unmocked: true)
 | --- | --- |
 | [`src/shared/bridge.ts`](../../src/shared/bridge.ts) | 桥协议。**用相对导入**，两端都能直接 import |
 | [`src/core/mcp/redact.ts`](../../src/core/mcp/redact.ts) | 强制脱敏 + 域名白名单，纯函数 |
-| [`src/hosts/background/mcpBridge.ts`](../../src/hosts/background/mcpBridge.ts) | 扩展侧 WS client：握手、重连、心跳、翻译请求 |
+| [`src/core/mcp/responseDetail.ts`](../../src/core/mcp/responseDetail.ts) | JSON 结构摘要、UTF-8 有界分段与游标续读，纯函数 |
+| [`src/hosts/background/mcpBridge.ts`](../../src/hosts/background/mcpBridge.ts) | 扩展侧 WS client：握手、重连、心跳、活动标签页过滤、翻译请求 |
 | [`mcp-server/src/bridge.ts`](../../mcp-server/src/bridge.ts) | WS server：三道安全校验、请求应答配对 |
 | [`mcp-server/src/tools.ts`](../../mcp-server/src/tools.ts) | 13 个 MCP 工具 + 首轮上下文 + 冲突检测 |
 | [`mcp-server/src/prompts.ts`](../../mcp-server/src/prompts.ts) | 3 条 Prompts —— 客户端不认 `instructions` 时的兜底入口 |
@@ -158,9 +159,10 @@ cd mcp-server && npm install && npm run build   # tsc + 零依赖单文件 bundl
 ```
 
 扩展设置页（Options 右上角 **MCP** 按钮）→ 打开「启用 MCP 桥」→ 会自动生成配对码
-→ 用面板「接入 AI 客户端」区的任一方式接入：
+→ 用面板「接入 AI 客户端」区的任一方式接入。面板里的安装和复制按钮都会**先等待设置保存成功**，
+确保发给客户端的配对码和端口已经在扩展侧生效；保存失败则保留弹窗，不跳转也不复制：
 
-- **一键安装按钮**（Cursor / VS Code deeplink，配对码已内嵌）
+- **保存并安装按钮**（Cursor / VS Code deeplink，配对码已内嵌）
 - **`claude mcp add` 命令**（Claude Code）
 - **`install` 安装器**：`node dist/bundle/mock-studio-mcp.mjs install --token <配对码>` ——
   自动检测各客户端配置并全部写入，写前备份
@@ -178,7 +180,8 @@ cd mcp-server && npm install && npm run build   # tsc + 零依赖单文件 bundl
 }
 ```
 
-设置页里有实时连接状态，连上会显示「● 已连接」。
+设置页里有实时连接状态，连上会显示「● 已连接」。这只表示扩展已连到本地桥，
+不代表 AI 客户端已经完成首次工具调用。
 
 ### 工具集
 
@@ -186,9 +189,9 @@ cd mcp-server && npm install && npm run build   # tsc + 零依赖单文件 bundl
 
 | 工具 | 用途 |
 | --- | --- |
-| `get_page_context` | Agent 首次调用：一次获得状态、关键异常/未 Mock 请求、相关规则和下一步建议 |
-| `list_recent_requests` | 页面最近发了什么。`only_unmocked: true` 直接回答「缺哪个 mock」 |
-| `get_request_detail` | 某条请求的完整响应体，用来对齐真实数据结构 |
+| `get_page_context` | Agent 首次调用：只读最后聚焦窗口的活动标签页，返回页面、状态、关键异常/未 Mock 请求、相关规则和下一步建议 |
+| `list_recent_requests` | 全部标签页最近发了什么。`only_unmocked: true` 直接回答「缺哪个 mock」 |
+| `get_request_detail` | 默认 `schema` 返回有界 JSON 结构摘要；显式 `sample` / `full` 才读原始内容，单次硬上限 64 KiB，可按 `nextCursor` 续读 |
 | `list_rules` | 现有规则与变体 |
 | `list_shell_templates` | 可用的响应外壳 |
 | `get_status` | 总开关、生效规则数、读侧是否可用 |
@@ -303,7 +306,7 @@ cd mcp-server && npm run e2e
 ```
 
 用一个**假扩展**（带正确 Origin 和配对码的 WS client）冒充 Chrome 侧，
-不用真开浏览器就能验证整条链路。40 项覆盖：工具集完整性、单调用页面上下文、未连接时的报错可操作性、
+不用真开浏览器就能验证整条链路。44 项覆盖：工具集完整性、活动标签页隔离、响应结构摘要与游标续读、未连接时的报错可操作性、
 错误配对码被拒、网页 Origin 被拒、读侧四个工具、写侧闭环（含「落到扩展的确实是一条
 `CREATE_RULE` 命令」这条对 A3 的断言）、多变体 / headers / behavior 的传达、四类冲突检测、
 **两个 MCP 客户端共用一个扩展**（peer 转发、读写落到同一处）、新扩展连接顶掉旧连接、
