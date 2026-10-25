@@ -339,7 +339,40 @@ async function main() {
   );
 
   const detail = await client.callTool({ name: 'get_request_detail', arguments: { id: 'c1' } });
-  check('get_request_detail 拿到完整响应体', detail.content[0].text.includes('Not Found'));
+  const detailJson = JSON.parse(detail.content[0].text);
+  check(
+    'get_request_detail 默认返回 JSON 结构而非原始 body',
+    detailJson.bodyMode === 'schema' &&
+      detailJson.body.type === 'object' &&
+      detailJson.body.properties.message.example === 'Not Found',
+  );
+
+  const sample = await client.callTool({
+    name: 'get_request_detail',
+    arguments: { id: 'c1', body_mode: 'sample' },
+  });
+  check(
+    'sample 模式显式返回原始响应',
+    JSON.parse(sample.content[0].text).body === '{"message":"Not Found"}',
+  );
+
+  const firstChunk = await client.callTool({
+    name: 'get_request_detail',
+    arguments: { id: 'c1', body_mode: 'full', max_bytes: 6 },
+  });
+  const firstChunkJson = JSON.parse(firstChunk.content[0].text);
+  check(
+    'full 模式遵守字节上限并返回续读游标',
+    firstChunkJson.body === '{"mess' && firstChunkJson.returnedBytes === 6 && firstChunkJson.nextCursor,
+  );
+  const nextChunk = await client.callTool({
+    name: 'get_request_detail',
+    arguments: { id: 'c1', body_mode: 'full', max_bytes: 64, cursor: firstChunkJson.nextCursor },
+  });
+  check(
+    '游标可以续读剩余响应',
+    JSON.parse(nextChunk.content[0].text).body === 'age":"Not Found"}',
+  );
 
   const rules = await client.callTool({ name: 'list_rules', arguments: {} });
   check('list_rules 带出变体列表', JSON.parse(rules.content[0].text).rules[0].variants.length === 2);

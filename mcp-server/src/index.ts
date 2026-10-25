@@ -90,9 +90,10 @@ async function main(): Promise<void> {
         '  「页面没数据 / 接口报错 / 这个接口挂了 / 帮我 mock 一下 / 造点假数据 /\n' +
         '   我要看空状态 / 测一下报错 / 后端还没做这个接口 / 翻页数据不变」\n\n' +
         '【标准顺序】\n' +
-        '1. get_page_context —— 一次看总开关、关键请求、相关规则和建议。\n' +
+        '1. get_page_context —— 一次看当前活动标签页、总开关、关键请求、相关规则和建议。\n' +
         '   **不要让用户手抄 URL**，也不要先连续调用多个列表工具\n' +
-        '2. get_request_detail —— 只在需要对齐完整字段结构时\n' +
+        '2. get_request_detail —— 只在需要对齐字段结构时；默认 schema 摘要已足够多数场景，\n' +
+        '   只有必须看原始内容时才用 sample/full，并按 nextCursor 分段续读\n' +
         '3. create_mock / update_mock / add_variant —— 按上下文选择；接口本来不存在用 kind:"virtual"；\n' +
         '   要一批像真的数据用 body_type:"mockjs"；要随参数变用 "dynamic"\n' +
         '4. **告诉用户刷新页面** —— 已经发出去的请求不会重来\n\n' +

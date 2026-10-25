@@ -31,6 +31,7 @@ import type { MockStore, Rule } from '../../src/core/types.js';
 import type { Command } from '../../src/core/command/types.js';
 import { createRuleDraft, createResponseSpec } from '../../src/core/store/defaults.js';
 import { findShadowedRules } from '../../src/core/store/validate.js';
+import { presentCaptureDetail } from '../../src/core/mcp/responseDetail.js';
 import type { ResponseSpec } from '../../src/core/types.js';
 
 type Json = { content: { type: 'text'; text: string }[]; isError?: boolean };
@@ -188,7 +189,7 @@ export function registerTools(server: McpServer, bridge: BridgeTransport): void 
         requests: captureData.readDisabled ? [] : important.map(brief),
         relevantRules: relevantRules.map(ruleBrief),
         recommendedNext,
-        note: '响应只含预览；需要完整响应体时调用 get_request_detail。',
+        note: '响应只含预览；用 get_request_detail 默认读取结构摘要，确需原文再选 sample/full。',
       });
     }),
   );
@@ -244,11 +245,26 @@ export function registerTools(server: McpServer, bridge: BridgeTransport): void 
   server.registerTool(
     'get_request_detail',
     {
-      title: '看某个请求的完整内容',
+      title: '按需读取请求详情与响应结构',
       description:
-        '按 id 取一条请求的完整记录，含响应体 —— 用它确认真实的数据结构，' +
-        '生成的 mock 才能贴合前端已经在用的字段。id 来自 list_recent_requests。',
-      inputSchema: { id: z.string().describe('请求 id') },
+        '按 id 取一条请求。默认 body_mode=schema，只返回 JSON 字段结构、数组首项和短示例，' +
+        '避免完整响应体撑爆上下文。需要原始内容时显式用 sample 或 full；两者都按字节限制分段。' +
+        'id 来自 get_page_context 或 list_recent_requests。',
+      inputSchema: {
+        id: z.string().describe('请求 id'),
+        body_mode: z
+          .enum(['schema', 'sample', 'full'])
+          .optional()
+          .describe('schema=结构摘要（默认）；sample=原始样本，默认 8KiB；full=原始分段，默认 16KiB'),
+        max_bytes: z
+          .number()
+          .int()
+          .min(1)
+          .max(65536)
+          .optional()
+          .describe('sample/full 单次最多返回的 UTF-8 字节数，硬上限 64KiB'),
+        cursor: z.string().optional().describe('上一次 sample/full 返回的 nextCursor，用于续读'),
+      },
       annotations: { readOnlyHint: true },
     },
     guard(async (a) => {
@@ -258,7 +274,13 @@ export function registerTools(server: McpServer, bridge: BridgeTransport): void 
       })) as Extract<BridgeData, { kind: 'captureDetail' }>;
       if (d.readDisabled) return text('读侧已被用户关闭。');
       if (!d.entry) return text(`没有找到 id 为 ${a.id} 的请求，它可能已经被环形缓冲挤掉了。`);
-      return json(d.entry);
+      return json(
+        presentCaptureDetail(d.entry, {
+          mode: a.body_mode ?? 'schema',
+          maxBytes: a.max_bytes,
+          cursor: a.cursor,
+        }),
+      );
     }),
   );
 
