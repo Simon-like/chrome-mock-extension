@@ -77,8 +77,16 @@ function fakeExtension({ port, token, origin = 'chrome-extension://abcdefghijklm
           return reply({ kind: 'state', store: state.store });
         case 'GET_CAPTURES': {
           let list = state.captures;
+          if (msg.activeTab) list = list.filter((e) => e.tabId === 7);
           if (msg.onlyUnmocked) list = list.filter((e) => !e.mocked);
-          return reply({ kind: 'captures', entries: list, total: list.length });
+          return reply({
+            kind: 'captures',
+            entries: [...list].reverse(),
+            total: list.length,
+            ...(msg.activeTab
+              ? { page: { id: 7, title: '商品页', url: 'https://shop.example.com/goods' } }
+              : {}),
+          });
         }
         case 'GET_CAPTURE_DETAIL':
           return reply({
@@ -168,6 +176,7 @@ function makeCaptures() {
   return [
     {
       id: 'c1',
+      tabId: 7,
       at: Date.now(),
       url: 'https://shop.example.com/api/goods/list?page=1&token=[REDACTED]',
       method: 'GET',
@@ -183,6 +192,7 @@ function makeCaptures() {
     },
     {
       id: 'c2',
+      tabId: 7,
       at: Date.now(),
       url: 'https://shop.example.com/api/user/profile',
       method: 'GET',
@@ -194,6 +204,22 @@ function makeCaptures() {
       body: '{"id":1}',
       truncated: false,
       durationMs: 3,
+      redacted: false,
+    },
+    {
+      id: 'c3-other-tab',
+      tabId: 99,
+      at: Date.now(),
+      url: 'https://other.example.com/api/other-tab',
+      method: 'GET',
+      api: 'fetch',
+      mocked: true,
+      ruleId: 'rule-other',
+      ruleName: '其他标签页',
+      status: 500,
+      body: '{"message":"other-tab"}',
+      truncated: false,
+      durationMs: 8,
       redacted: false,
     },
   ];
@@ -292,6 +318,12 @@ async function main() {
     pageContextJson.status.globalEnabled === true &&
       pageContextJson.requests[0].status === 404 &&
       pageContextJson.recommendedNext[0].includes('get_request_detail'),
+  );
+  check(
+    'get_page_context 只返回当前标签页',
+    pageContextJson.page?.id === 7 &&
+      pageContextJson.requests.every((r) => r.tabId === 7) &&
+      !JSON.stringify(pageContextJson.requests).includes('other-tab'),
   );
 
   const recent = await client.callTool({

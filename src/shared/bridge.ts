@@ -115,6 +115,8 @@ export type BridgeRequest =
       onlyUnmocked?: boolean;
       /** URL 子串过滤 */
       urlFilter?: string;
+      /** 只读最后聚焦窗口里的活动标签页，并返回该页的脱敏上下文 */
+      activeTab?: boolean;
     }
   | { id: string; type: 'GET_CAPTURE_DETAIL'; captureId: string }
   /**
@@ -137,10 +139,23 @@ export type BridgeResponse =
 export type BridgeData =
   | { kind: 'state'; store: MockStore }
   | { kind: 'dispatch'; result: CommandResult }
-  | { kind: 'captures'; entries: RedactedCapture[]; total: number; readDisabled?: boolean }
+  | {
+      kind: 'captures';
+      entries: RedactedCapture[];
+      total: number;
+      readDisabled?: boolean;
+      page?: RedactedPage | null;
+    }
   | { kind: 'captureDetail'; entry: RedactedCapture | null; readDisabled?: boolean }
   | { kind: 'pong' }
   | { kind: 'shellTemplates'; templates: ShellTemplate[] };
+
+/** 活动标签页的最小上下文；URL 离开扩展前同样必须脱敏。 */
+export interface RedactedPage {
+  id: number;
+  title: string;
+  url: string;
+}
 
 /**
  * 出给 AI 的请求记录。
@@ -151,6 +166,8 @@ export type BridgeData =
  */
 export interface RedactedCapture {
   id: string;
+  /** 发起请求的标签页；旧会话记录可能没有 */
+  tabId?: number;
   at: number;
   url: string;
   method: string;

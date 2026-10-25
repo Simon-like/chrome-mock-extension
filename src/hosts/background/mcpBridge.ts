@@ -29,7 +29,7 @@ import {
   type BridgeRequest,
   type BridgeResponse,
 } from '@shared/bridge.js';
-import { hostAllowed, redactCapture } from '@core/mcp/redact.js';
+import { hostAllowed, redactCapture, redactUrl } from '@core/mcp/redact.js';
 import type { Command } from '@core/command/types.js';
 import { getCaptures } from './captureStore.js';
 
@@ -354,7 +354,9 @@ async function answer(req: BridgeRequest): Promise<BridgeResponse> {
         const gate = await readGate();
         if (gate) return ok(req.id, { kind: 'captures', entries: [], total: 0, readDisabled: true });
 
-        const all = await visibleCaptures();
+        const page = req.activeTab ? await getActivePage() : null;
+        // 活动页不存在时返回空集，不能退化成“所有标签页”。
+        const all = req.activeTab && !page ? [] : await visibleCaptures(page?.id);
         let list = all;
         if (req.onlyMocked) list = list.filter((e) => e.mocked);
         if (req.onlyUnmocked) list = list.filter((e) => !e.mocked);
@@ -369,6 +371,7 @@ async function answer(req: BridgeRequest): Promise<BridgeResponse> {
           kind: 'captures',
           entries: ordered.slice(0, limit),
           total: ordered.length,
+          ...(req.activeTab ? { page } : {}),
         });
       }
 
@@ -408,12 +411,23 @@ async function readGate(): Promise<boolean> {
  * 脱敏放在扩展侧而不是 MCP 侧：万一 WS 端口被别的进程连上，
  * 它拿到的也已经是脱敏过的数据。防线要设在数据离开之前。
  */
-async function visibleCaptures() {
+async function visibleCaptures(tabId?: number) {
   const { settings } = await deps!.getState();
-  const all = await getCaptures();
+  const all = await getCaptures(tabId);
   return all
     .filter((e) => hostAllowed(hostOf(e.url), settings.aiHostWhitelist))
-    .map(redactCapture);
+    .map((entry) => ({ ...redactCapture(entry), tabId: entry.tabId }));
+}
+
+/** 只暴露当前页的最小上下文；页面 URL 和请求 URL 走同一套脱敏。 */
+async function getActivePage() {
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  if (typeof tab?.id !== 'number') return null;
+  return {
+    id: tab.id,
+    title: tab.title ?? '',
+    url: redactUrl(tab.url ?? ''),
+  };
 }
 
 function hostOf(url: string): string {

@@ -121,7 +121,8 @@ export function registerTools(server: McpServer, bridge: BridgeTransport): void 
       title: '一次看懂当前页面的 Mock 上下文',
       description:
         '处理「页面没数据 / mock 怎么没生效 / 帮我补接口」时优先调用。' +
-        '一次返回总开关、规则摘要、最近异常或未命中的请求，以及下一步建议，' +
+        '只读取最后聚焦 Chrome 窗口里的活动标签页，不混入其他页面的请求。' +
+        '一次返回页面信息、总开关、规则摘要、最近异常或未命中的请求，以及下一步建议，' +
         '避免每个 agent 先后调用 get_status、list_recent_requests、list_rules 才建立上下文。' +
         '为了控制上下文体积只带响应预览；需要完整结构再用 get_request_detail。',
       inputSchema: {
@@ -138,6 +139,7 @@ export function registerTools(server: McpServer, bridge: BridgeTransport): void 
           type: 'GET_CAPTURES',
           limit: 20,
           urlFilter: a.url_filter,
+          activeTab: true,
         }) as Promise<Extract<BridgeData, { kind: 'captures' }>>,
       ]);
 
@@ -157,8 +159,10 @@ export function registerTools(server: McpServer, bridge: BridgeTransport): void 
       if (!store.enabled) recommendedNext.push('Mock 总开关已关闭：需要 mock 时调用 set_global_enabled。');
       if (captureData.readDisabled) {
         recommendedNext.push('读侧已关闭：请用户开启“允许 AI 读取请求记录”，或直接提供接口 URL。');
+      } else if (!captureData.page) {
+        recommendedNext.push('没有找到活动标签页：请用户先切到要调试的 Chrome 页面。');
       } else if (captureData.entries.length === 0) {
-        recommendedNext.push('没有近期请求：让用户刷新页面或重新触发操作。');
+        recommendedNext.push('当前标签页没有近期请求：让用户刷新页面或重新触发操作。');
       } else {
         const broken = important.find((e) => !e.mocked && (e.status === null || e.status >= 400));
         if (broken) {
@@ -173,6 +177,7 @@ export function registerTools(server: McpServer, bridge: BridgeTransport): void 
       }
 
       return json({
+        page: captureData.page ?? null,
         status: {
           globalEnabled: store.enabled,
           enabledRuleCount: store.rules.filter((r) => r.enabled).length,
@@ -674,6 +679,7 @@ function scopeNotes(methods?: string[], hosts?: string[]): string[] {
 function brief(e: RedactedCapture) {
   return {
     id: e.id,
+    tabId: e.tabId,
     method: e.method,
     url: e.url,
     status: e.status,
