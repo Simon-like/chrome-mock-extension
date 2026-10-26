@@ -130,11 +130,8 @@ export function McpSettings({ settings, onSave, onClose }: Props) {
     if (next && !token) setToken(generateToken());
   };
 
-  /**
-   * 接入配置一律用 npx 形态 —— 里面没有任何本地路径，
-   * 配对码也已经内嵌，用户拿到就能用，不用再「核对路径再粘贴」。
-   * 本地仓库版（未发布 npm）走 install 子命令，由它自己填绝对路径。
-   */
+  /** 所有复制出来的配置都使用 npm 入口，不依赖用户的仓库路径。 */
+  const shownToken = token || '<配对码>';
   const npmEntry: Record<string, unknown> = {
     command: 'npx',
     args: ['-y', 'mock-studio-mcp'],
@@ -153,18 +150,27 @@ export function McpSettings({ settings, onSave, onClose }: Props) {
     JSON.stringify({ name: 'mock-studio', type: 'stdio', ...npmEntry }),
   )}`;
 
-  /** Claude Code 的官方 CLI 写法 */
+  const portArgs = port !== '8787' ? ` --port ${port}` : '';
+  const installCmd = (client?: string) =>
+    `npx -y mock-studio-mcp install --token ${shownToken}${portArgs}` +
+    (client ? ` --client ${client}` : '');
   const claudeCmd =
-    `claude mcp add mock-studio` +
-    ` -e MOCK_STUDIO_TOKEN=${token || '<配对码>'}` +
+    `claude mcp add mock-studio -e MOCK_STUDIO_TOKEN=${shownToken}` +
     (port !== '8787' ? ` -e MOCK_STUDIO_PORT=${port}` : '') +
     ` -- npx -y mock-studio-mcp`;
-
-  /** 本地仓库版：安装器自己知道绝对路径，配对码只贴这一次，写进所有客户端 */
+  const codexCmd =
+    `codex mcp add mock-studio --env MOCK_STUDIO_TOKEN=${shownToken}` +
+    (port !== '8787' ? ` --env MOCK_STUDIO_PORT=${port}` : '') +
+    ` -- npx -y mock-studio-mcp`;
+  const kimiLegacyCmd =
+    `kimi mcp add --transport stdio mock-studio --env MOCK_STUDIO_TOKEN=${shownToken}` +
+    (port !== '8787' ? ` --env MOCK_STUDIO_PORT=${port}` : '') +
+    ` -- npx -y mock-studio-mcp`;
   const localInstallCmd =
-    `node mcp-server/dist/bundle/mock-studio-mcp.mjs install` +
-    ` --token ${token || '<配对码>'}` +
-    (port !== '8787' ? ` --port ${port}` : '');
+    `node mcp-server/dist/bundle/mock-studio-mcp.mjs install --token ${shownToken}${portArgs}`;
+
+  const copyCommand = (command: string, key: string) =>
+    saveAndRun(() => copy(command, key));
 
   return (
     <>
@@ -185,7 +191,7 @@ export function McpSettings({ settings, onSave, onClose }: Props) {
           </div>
           <div className="faint" style={{ fontSize: 10.5, marginBottom: 14, lineHeight: 1.6 }}>
             开启后扩展会连本机的 MCP Server（一个 Node 进程），
-            让 Claude Code / Cursor 里的 AI 能看到页面实际发了哪些请求、并直接写 mock 规则。
+            让 Claude Code、Codex、Kimi、Cursor、DSH 等客户端里的 AI 看到页面实际请求并直接写 mock 规则。
             数据全程不出本机。
           </div>
 
@@ -233,11 +239,22 @@ export function McpSettings({ settings, onSave, onClose }: Props) {
                 />
               </div>
 
-              {/* ── 接入 AI 客户端：能一键就不手贴 ── */}
+              {/* ── 接入 AI 客户端 ── */}
               <div style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', marginBottom: 6 }}>接入 AI 客户端</label>
+                <CommandCopyRow
+                  label="通用安装（推荐）"
+                  command={installCmd()}
+                  copyKey="install"
+                  copied={copied}
+                  saving={saving}
+                  onCopy={() => copyCommand(installCmd(), 'install')}
+                />
+                <div className="faint" style={{ fontSize: 10.5, margin: '4px 0 12px', lineHeight: 1.6 }}>
+                  保存并复制后，在任意终端运行。自动检测 Claude Code、Codex、Kimi、Cursor、
+                  VS Code、Windsurf、Claude Desktop 和 DSH；已有配置会先备份。
+                </div>
 
-                {/* 先保存再跳转，保证 deeplink 里的 token/port 已经在扩展侧生效 */}
+                <label style={{ display: 'block', marginBottom: 6 }}>或选择指定客户端</label>
                 <div className="row" style={{ gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
                   <button
                     className="installbtn"
@@ -255,89 +272,61 @@ export function McpSettings({ settings, onSave, onClose }: Props) {
                   </button>
                 </div>
                 <div className="faint" style={{ fontSize: 10.5, marginBottom: 12, lineHeight: 1.6 }}>
-                  点按钮 → 先保存当前设置 → 对应客户端弹确认框（配对码已内嵌，无需再填）。
-                  点了没反应说明没装该客户端，或它还没注册协议（先启动一次再点）。
+                  这两个按钮会打开客户端确认框；其他客户端使用下面的命令，不会自动启动程序。
                 </div>
 
-                {/* Claude Code：官方 CLI 一行命令 */}
-                <label>Claude Code</label>
-                <div className="row" style={{ gap: 6 }}>
-                  <input
-                    className="mono"
-                    readOnly
-                    value={claudeCmd}
-                    onFocus={(e) => e.target.select()}
-                    style={{ fontSize: 11 }}
-                  />
-                  <button
-                    className="tiny"
-                    disabled={saving}
-                    onClick={() => void saveAndRun(() => copy(claudeCmd, 'claude'))}
-                  >
-                    {copied === 'claude' ? '已复制' : '保存并复制'}
-                  </button>
+                <CommandCopyRow label="Claude Code" command={claudeCmd} copyKey="claude"
+                  copied={copied} saving={saving} onCopy={() => copyCommand(claudeCmd, 'claude')} />
+                <CommandCopyRow label="Codex" command={codexCmd} copyKey="codex"
+                  copied={copied} saving={saving} onCopy={() => copyCommand(codexCmd, 'codex')} />
+                <CommandCopyRow label="Kimi Code" command={installCmd('kimi-code')} copyKey="kimi-code"
+                  copied={copied} saving={saving}
+                  onCopy={() => copyCommand(installCmd('kimi-code'), 'kimi-code')} />
+                <div className="faint" style={{ fontSize: 10.5, margin: '4px 0 8px' }}>
+                  Kimi Code 配置后新建会话生效，可在 TUI 用 /mcp 检查连接。
                 </div>
 
-                {/* 本地仓库版 / 其他客户端：安装器一次写全部 */}
-                <div style={{ marginTop: 12 }}>
-                  <label>
-                    从 GitHub 下载的本地版
-                    <span className="faint" style={{ fontWeight: 400 }}>
-                      {' '}
-                      · 一条命令写进所有已安装的客户端，不用自己核对路径
-                    </span>
-                  </label>
-                  <div className="row" style={{ gap: 6 }}>
-                    <input
-                      className="mono"
-                      readOnly
-                      value={localInstallCmd}
-                      onFocus={(e) => e.target.select()}
-                      style={{ fontSize: 11 }}
-                    />
-                    <button
-                      className="tiny"
-                      disabled={saving}
-                      onClick={() => void saveAndRun(() => copy(localInstallCmd, 'local'))}
-                    >
-                      {copied === 'local' ? '已复制' : '保存并复制'}
-                    </button>
-                  </div>
-                  <div className="faint" style={{ fontSize: 10.5, marginTop: 4, lineHeight: 1.6 }}>
-                    在<b>仓库根目录</b>跑这条命令：自动检测 Claude Code / Cursor / VS Code /
-                    Windsurf / Claude Desktop 并全部写入，写前自动备份原配置。
-                  </div>
-                </div>
-
-                {/* 手动 JSON：给 deeplink 和 CLI 都不可用时兜底 */}
-                <details style={{ marginTop: 12 }}>
+                <details style={{ marginTop: 10 }}>
                   <summary style={{ fontSize: 11.5, cursor: 'pointer', color: 'var(--muted)' }}>
-                    手动复制 JSON 配置（其他客户端）
+                    更多客户端（Kimi 旧版、DSH）
                   </summary>
-                  <div className="row" style={{ justifyContent: 'flex-end', margin: '6px 0 4px' }}>
-                    <button
-                      className="tiny"
-                      disabled={saving}
-                      onClick={() => void saveAndRun(() => copy(manualConfig, 'config'))}
-                    >
-                      {copied === 'config' ? '已复制' : '保存并复制整段'}
-                    </button>
+                  <div style={{ marginTop: 8 }}>
+                    <CommandCopyRow label="Kimi CLI 旧版" command={kimiLegacyCmd} copyKey="kimi-legacy"
+                      copied={copied} saving={saving}
+                      onCopy={() => copyCommand(kimiLegacyCmd, 'kimi-legacy')} />
+                    <CommandCopyRow label="DSH · web" command={installCmd('dsh-web')} copyKey="dsh-web"
+                      copied={copied} saving={saving}
+                      onCopy={() => copyCommand(installCmd('dsh-web'), 'dsh-web')} />
+                    <CommandCopyRow label="DSH · desktop" command={installCmd('dsh-desktop')}
+                      copyKey="dsh-desktop" copied={copied} saving={saving}
+                      onCopy={() => copyCommand(installCmd('dsh-desktop'), 'dsh-desktop')} />
+                    <div className="faint" style={{ fontSize: 10.5, margin: '4px 0 8px', lineHeight: 1.6 }}>
+                      DSH 使用原生 cordis.patch.yml。安装器只创建空配置或更新自己标记的配置块；
+                      已有其他 YAML 内容时会停止并给出手动合并提示，不会强行覆盖。
+                    </div>
                   </div>
-                  <pre className="mono codeblock">{manualConfig}</pre>
-                  <ol className="faint hintlist">
-                    <li>
-                      这段配置用 <code className="mono">npx -y mock-studio-mcp</code> 启动，
-                      要求本包已发布到 npm；本地仓库版请用上面那条 install 命令
-                    </li>
-                    <li>
-                      粘进客户端的 MCP 配置文件：Claude Code 是<b>打开会话那个目录</b>的
-                      <code className="mono"> .mcp.json</code>，Cursor 是
-                      <code className="mono"> ~/.cursor/mcp.json</code>
-                    </li>
-                    <li>
-                      <b>重启客户端</b> —— MCP Server 是它拉起的子进程，不重启读不到新配置
-                    </li>
-                  </ol>
+                </details>
+
+                <details style={{ marginTop: 10 }}>
+                  <summary style={{ fontSize: 11.5, cursor: 'pointer', color: 'var(--muted)' }}>
+                    本地开发版与手动配置
+                  </summary>
+                  <div style={{ marginTop: 8 }}>
+                    <CommandCopyRow label="GitHub 源码版（在仓库根目录运行）" command={localInstallCmd}
+                      copyKey="local" copied={copied} saving={saving}
+                      onCopy={() => copyCommand(localInstallCmd, 'local')} />
+                    <div className="row" style={{ justifyContent: 'flex-end', margin: '10px 0 4px' }}>
+                      <button className="tiny" disabled={saving}
+                        onClick={() => void saveAndRun(() => copy(manualConfig, 'config'))}>
+                        {copied === 'config' ? '已复制' : '保存并复制手动 JSON'}
+                      </button>
+                    </div>
+                    <pre className="mono codeblock">{manualConfig}</pre>
+                    <div className="faint" style={{ fontSize: 10.5, lineHeight: 1.6 }}>
+                      手动 JSON 适用于支持 mcpServers 的客户端。Kimi Code 用户级配置是
+                      ~/.kimi-code/mcp.json；DSH 不使用这种格式，请用上面的 DSH 命令。
+                    </div>
+                  </div>
                 </details>
               </div>
 
@@ -395,6 +384,43 @@ export function McpSettings({ settings, onSave, onClose }: Props) {
         </div>
       </div>
     </>
+  );
+}
+
+interface CommandCopyRowProps {
+  label: string;
+  command: string;
+  copyKey: string;
+  copied: string | null;
+  saving: boolean;
+  onCopy: () => void | Promise<void>;
+}
+
+/** 所有命令入口共用“保存成功才复制”的行为，避免新 token 尚未生效就跳转。 */
+function CommandCopyRow({
+  label,
+  command,
+  copyKey,
+  copied,
+  saving,
+  onCopy,
+}: CommandCopyRowProps) {
+  return (
+    <div style={{ marginTop: 8 }}>
+      <label>{label}</label>
+      <div className="row" style={{ gap: 6 }}>
+        <input
+          className="mono"
+          readOnly
+          value={command}
+          onFocus={(event) => event.target.select()}
+          style={{ fontSize: 11 }}
+        />
+        <button className="tiny" disabled={saving} onClick={() => void onCopy()}>
+          {copied === copyKey ? '已复制' : '保存并复制'}
+        </button>
+      </div>
+    </div>
   );
 }
 

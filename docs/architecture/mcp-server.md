@@ -3,8 +3,8 @@
 > 类型：Design / Architecture Reference
 > 状态：Implemented
 > Owner：项目维护者
-> 更新：2026-10-25
-> 验证：**✅ 44 项 e2e 全通**
+> 更新：2026-10-26
+> 验证：**✅ 44 项 MCP e2e + 9 项安装器 e2e 全通**
 > 相关：[PRD-0001 §2.2](../product/prds/PRD-0001-ai-collaboration-and-virtual-endpoints.md)（L2 方案与安全清单）· [2026-08-07 交接快照 §4](../delivery/snapshots/2026-08-07-project-handoff.md)（A1–A4 架构预留）
 
 这是这个项目最初的立项理由之一，也是它跟所有竞品拉开距离的地方。
@@ -69,7 +69,9 @@ AI  → get_page_context
 | [`mcp-server/src/bridge.ts`](../../mcp-server/src/bridge.ts) | WS server：三道安全校验、请求应答配对 |
 | [`mcp-server/src/tools.ts`](../../mcp-server/src/tools.ts) | 13 个 MCP 工具 + 首轮上下文 + 冲突检测 |
 | [`mcp-server/src/prompts.ts`](../../mcp-server/src/prompts.ts) | 3 条 Prompts —— 客户端不认 `instructions` 时的兜底入口 |
-| [`mcp-server/e2e.mjs`](../../mcp-server/e2e.mjs) | 端到端冒烟，跑的是编译产物 |
+| [`mcp-server/src/install.ts`](../../mcp-server/src/install.ts) | JSON / Codex CLI / DSH YAML 三类客户端适配，预览、备份与原子写入 |
+| [`mcp-server/e2e.mjs`](../../mcp-server/e2e.mjs) | MCP 协议端到端冒烟，跑的是编译产物 |
+| [`mcp-server/install-e2e.mjs`](../../mcp-server/install-e2e.mjs) | 安装器黑盒测试，只操作临时 HOME 与假 Codex CLI |
 
 ---
 
@@ -162,11 +164,12 @@ cd mcp-server && npm install && npm run build   # tsc + 零依赖单文件 bundl
 → 用面板「接入 AI 客户端」区的任一方式接入。面板里的安装和复制按钮都会**先等待设置保存成功**，
 确保发给客户端的配对码和端口已经在扩展侧生效；保存失败则保留弹窗，不跳转也不复制：
 
-- **保存并安装按钮**（Cursor / VS Code deeplink，配对码已内嵌）
-- **`claude mcp add` 命令**（Claude Code）
-- **`install` 安装器**：`node dist/bundle/mock-studio-mcp.mjs install --token <配对码>` ——
-  自动检测各客户端配置并全部写入，写前备份
-- 手动 JSON（npx 形态）：
+- **npm 通用安装器（默认主入口）**：`npx -y mock-studio-mcp install --token <配对码>`；
+  本地开发版用 `node mcp-server/dist/bundle/mock-studio-mcp.mjs install …`
+- **保存并安装按钮**：Cursor / VS Code deeplink，配对码已内嵌
+- **官方 CLI 命令**：Claude Code / Codex / Kimi CLI 旧版
+- **专用安装目标**：Kimi Code 新旧配置分离，DSH web / desktop 使用原生 YAML
+- **手动 JSON**（npx 形态）：
 
 ```json
 {
@@ -179,6 +182,18 @@ cd mcp-server && npm install && npm run build   # tsc + 零依赖单文件 bundl
   }
 }
 ```
+
+#### 安装器的三类适配与写入边界
+
+| 类型 | 客户端 | 为什么这样处理 |
+| --- | --- | --- |
+| JSON 合并 | Claude、Kimi、Cursor、VS Code、Windsurf | 结构稳定；保留其他服务器和顶层字段，只替换 `mock-studio` |
+| 官方 CLI | Codex | 官方命令负责 `config.toml`；安装器以参数数组调用且不经过 shell，不另写 TOML 解析器 |
+| 受限 YAML 合并 | DSH web / desktop | 原生格式是 Cordis patch；只创建空配置或替换本安装器标记的块，不猜复杂 YAML 结构 |
+
+所有文件型目标先完成解析，再备份为 `*.mock-studio.<时间戳>.bak`，最后同目录临时文件原子替换。
+`--print` 复用同一套合并逻辑；非法配置、未知客户端和任一部分失败都会返回非零。
+Kimi Code 的生效提示是新建会话，DSH 是重启对应 profile，不再对所有客户端笼统提示同一种重启。
 
 设置页里有实时连接状态，连上会显示「● 已连接」。这只表示扩展已连到本地桥，
 不代表 AI 客户端已经完成首次工具调用。
@@ -302,8 +317,18 @@ Claude Code 和 JoyCode 不能同时用。
 ## 6. 验证
 
 ```bash
+# MCP 协议与桥接
 cd mcp-server && npm run e2e
+
+# 安装器黑盒：临时 HOME、非法配置、备份、部分失败、DSH、假 Codex CLI
+cd mcp-server && npm run test:install
+
+# 配置合并与参数解析单测（仓库根目录）
+npm test -- tests/install.test.ts
 ```
+
+安装器测试不读写真实用户 HOME。Codex 用临时可执行文件记录实际 argv，验证 token 中的 shell 字符只是单个参数，
+`--print` 不执行命令；同时验证复杂 DSH YAML 不被覆盖、部分失败退出码非零。
 
 用一个**假扩展**（带正确 Origin 和配对码的 WS client）冒充 Chrome 侧，
 不用真开浏览器就能验证整条链路。44 项覆盖：工具集完整性、活动标签页隔离、响应结构摘要与游标续读、未连接时的报错可操作性、

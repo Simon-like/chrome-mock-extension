@@ -3,7 +3,7 @@
 > 类型：Guide
 > 状态：Active
 > Owner：项目维护者
-> 更新：2026-09-01 · 面向**使用者**
+> 更新：2026-10-26 · 面向**使用者**
 > 想知道它怎么实现的、为什么这么设计 → [MCP Server](../architecture/mcp-server.md)
 
 接上 MCP 之后，你对 AI 说一句「页面没数据，帮我 mock 一下」就完事了 ——
@@ -56,33 +56,82 @@
 
 ### ② 客户端侧：任选一种接入
 
-面板上「接入 AI 客户端」区给出了所有方式，配对码都已内嵌：
-
-| 方式 | 适合谁 | 做什么 |
-| --- | --- | --- |
-| **保存并安装按钮** | Cursor / VS Code | 点按钮 → 等待设置保存 → 客户端弹确认框 → 同意 |
-| **`claude mcp add` 命令** | Claude Code | 复制面板上那行命令，在终端跑一次 |
-| **`install` 安装器** | 其他客户端 | 任意目录跑 `npx -y mock-studio-mcp install --token <配对码>`（本地仓库版则跑面板里那条 `node … install` 命令）：自动检测 Claude Code / Cursor / VS Code / Windsurf / Claude Desktop，**配对码只贴这一次**，全部写入，写前自动备份（`*.mock-studio.bak`） |
-| **手动 JSON** | 以上都不可用时 | 面板里折叠区有完整 JSON（npx 形态） |
-
-安装器的完整参数（`--client` 只写指定客户端、`--print` 预览不落盘等）：
+面板上的所有安装和复制按钮都会先保存当前配对码与端口。**通用安装器是默认推荐路径**：
 
 ```bash
-npx -y mock-studio-mcp install --help
+npx -y mock-studio-mcp install --token <配对码>
 ```
+
+本地仓库版则展开「本地开发版与手动配置」，在仓库根目录运行那条 `node … install` 命令。
+
+| 客户端 | 推荐方式 | 生效方式 |
+| --- | --- | --- |
+| Cursor / VS Code | 面板「保存并安装」按钮，客户端弹确认框后同意 | 重启客户端 |
+| Claude Code | 面板的 `claude mcp add` 官方命令，或安装器 | 重启客户端；项目配置需信任 |
+| Codex CLI / IDE | 面板的 `codex mcp add` 官方命令，或 `--client codex` | 重启 Codex 会话 / IDE |
+| Kimi Code | `--client kimi-code`；用户级写入 `~/.kimi-code/mcp.json` | **新建会话**；`/mcp` 检查 |
+| Kimi CLI 旧版 | 面板的 `kimi mcp add`，或 `--client kimi-legacy` | 重启客户端 |
+| Windsurf / Claude Desktop | 通用安装器自动检测 | 重启客户端 |
+| DSH web / desktop | `--client dsh-web` / `--client dsh-desktop` | 重启对应 profile |
+
+安装器常用参数：
+
+```bash
+# 只接 Kimi Code，非默认端口
+npx -y mock-studio-mcp install --client kimi-code --token <配对码> --port 8788
+
+# 同时接多个；ID 列表以 --help 为准
+npx -y mock-studio-mcp install --client codex,kimi-code,dsh-web --token <配对码>
+
+# 同时创建 Claude Code / Kimi Code 项目级配置
+npx -y mock-studio-mcp install --project --token <配对码>
+
+# 只预览合并结果或 Codex 官方命令，不写文件、不执行客户端命令
+npx -y mock-studio-mcp install --client kimi-code,codex --token <配对码> --print
+```
+
+写入安全约定：
+
+- JSON 只替换 `mock-studio`，保留其他服务器和顶层字段；非法 JSON 或非法结构会直接失败，**不会按空配置覆盖**。
+- 已有文件备份为 `*.mock-studio.<时间戳>.bak`，再经同目录临时文件原子替换。
+- Codex 由官方 CLI 修改 `config.toml`，安装器不传 shell、不自行解析 TOML，并在调用前备份。
+- 任一目标失败会让最终退出码非零；其他目标的成功结果会保留并逐项报告。
+- DSH 只自动创建空配置或更新本安装器标记的 YAML 块。自动检测会跳过复杂 DSH 配置；显式选择时会说明原因，不会强行合并。
 
 > ⚠️ **`.mcp.json` 要加进 `.gitignore`**。里面那串配对码等同于本机 mock 的访问口令。
 > 配置随时能从设置页重新生成，不需要靠 git 分发。
 
-### ③ 重启客户端
+#### DSH 已有复杂 YAML 时怎么手动加
 
-MCP Server 是被客户端**拉起来**的（stdio 子进程），不重启读不到新配置。
+把下面这块合并到对应 profile 的 `cordis.patch.yml`（web 通常是 `~/.dsh/profiles/web/cordis.patch.yml`）。
+注意它是原生 `insert` 结构，**不是**通用的 `mcpServers` JSON；如果文件当前只有 `[]`，用下面内容替换 `[]`：
+
+```yaml
+- insert:
+    - id: mcp-mock-studio
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: mock-studio
+        transport: stdio
+        command: npx
+        args: ['-y', 'mock-studio-mcp']
+        env:
+          MOCK_STUDIO_TOKEN: '<配对码>'
+          # 非默认端口时再加：
+          # MOCK_STUDIO_PORT: '8788'
+```
+
+DSH 0.2.x 已内置 `@deepseek-ai/dsh-mcp-client`，不需要另装旧版客户端包。项目级 `.dsh/mcp.json` 属于社区管理插件能力，不作为这里的原生安装路径。
+
+### ③ 重开客户端或会话
+
+MCP Server 是被客户端**拉起来**的（stdio 子进程）。Claude Code、Codex、Cursor、DSH 等重启对应客户端或 profile；Kimi Code 新增或编辑配置后**新建会话**，已打开的会话不会加载这项改动。
 Claude Code 首次会弹**信任提示**，要点同意 —— 这是它对项目级 `.mcp.json` 的安全机制。
 
 ### ④ 确认
 
 回到扩展设置页，状态应显示 **● 已连接**，并在 AI 里问一句「当前页面有哪些请求」验证首次工具调用。
-扩展的「已连接」只代表扩展已连到本地桥；Claude Code 里也可以敲 `/mcp` 检查客户端侧状态。
+扩展的「已连接」只代表扩展已连到本地桥；Claude Code / Codex / Kimi Code 里也可以分别用 `/mcp` 检查客户端侧状态。
 
 ---
 
@@ -250,14 +299,19 @@ cd mcp-server && npm run build     # ① 重新编译
 这是**标准 MCP Server**（stdio 传输），不是给 Claude 定制的。判断标准只有一条：
 **那个工具支不支持 MCP，且能拉起本地进程。**
 
-| 工具 | 能用吗 |
-| --- | --- |
-| Claude Code / Claude Desktop | ✅ |
-| Cursor · Cline · Continue · Windsurf | ✅ |
-| 任何网页版 AI | ❌ 拉不起本地进程，也连不了你的 localhost |
-| 其他 IDE 插件 | 看它文档里有没有 `mcpServers` 这类配置 |
+| 工具 | 能用吗 | 安装器适配 |
+| --- | --- | --- |
+| Claude Code / Claude Desktop | ✅ | JSON / Claude 官方 CLI |
+| Codex CLI / IDE | ✅ | Codex 官方 CLI |
+| Kimi Code / Kimi CLI 旧版 | ✅ | 两代配置路径分开适配 |
+| DSH | ✅ | 原生 `cordis.patch.yml`，复杂配置转手动 |
+| Cursor · Cline · Continue · Windsurf | ✅ | Cursor / Windsurf 有专用目标，其余用手动 JSON |
+| 任何网页版 AI | ❌ 拉不起本地进程，也连不了你的 localhost | — |
+| 其他 IDE 插件 | 看它文档里有没有 `mcpServers` 这类配置 | 手动 JSON |
 
 配置内容一个字都不用改 —— **配对码和端口是绑扩展的，不是绑项目/工具的。**
+
+客户端格式依据：[Codex MCP](https://developers.openai.com/codex/mcp)、[Kimi Code MCP](https://www.kimi.com/code/docs/kimi-code-cli/customization/mcp.html)、[DSH MCP Client](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/mcp/mcp-client/README.zh.md)。DSH 的社区项目管理插件不是官方全局配置格式，本文不混用两者。
 
 ### 多个工具可以同时用
 

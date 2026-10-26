@@ -186,11 +186,13 @@ AI  → get_page_context
 | 你的客户端 | 操作 |
 | --- | --- |
 | Cursor / VS Code | 点面板里的 **保存并安装按钮**（配对码已内嵌，弹确认框同意即可） |
-| Claude Code | 复制面板里的一行 `claude mcp add` 命令，在终端跑 |
-| 其他客户端 | 任意目录跑 `npx -y mock-studio-mcp install --token <配对码>` —— 自动检测所有已安装客户端并全部写入，写前自动备份 |
-| 本地仓库版（未走 npm） | 在仓库根目录跑面板里那条 `install` 命令，效果同上 |
+| Claude Code / Codex | 复制面板里的官方 `mcp add` 命令，在终端跑 |
+| Kimi Code | 复制面板里的 `install --client kimi-code` 命令；配置后**新建会话**生效 |
+| Kimi CLI 旧版 / DSH | 展开面板的「更多客户端」，复制对应命令 |
+| 多客户端 / 其他情况 | 任意目录跑 `npx -y mock-studio-mcp install --token <配对码>` —— 自动检测已安装客户端，写前备份；也可用 `--client` 精确选择、`--print` 预览 |
+| 本地仓库版（未走 npm） | 在仓库根目录跑面板「本地开发版与手动配置」里的 `install` 命令 |
 
-接入后**重启对应的 AI 客户端**生效。
+除 Kimi Code 新建会话外，其余客户端按面板提示重启。DSH 使用原生 `cordis.patch.yml`：安装器只自动创建空配置或更新自己标记的 YAML 块，已有复杂配置会跳过自动修改并给出手动合并提示。
 
 > 客户端配置长这样 —— **没有任何本地路径**（要求 Node 18+）：
 >
