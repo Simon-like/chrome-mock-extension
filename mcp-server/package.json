@@ -35,6 +35,7 @@
     "start": "node dist/bundle/mock-studio-mcp.mjs",
     "install-clients": "node dist/bundle/mock-studio-mcp.mjs install",
     "e2e": "npm run build && node e2e.mjs",
+    "test:install": "npm run build && node install-e2e.mjs",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
