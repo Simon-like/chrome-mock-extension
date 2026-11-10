@@ -9,6 +9,7 @@
 
 import { createResponseSpec, getActiveVariant, materializeRule } from '../store/defaults.js';
 import { migrate } from '../store/migrate.js';
+import { organizeLegacyRules } from '../store/organize.js';
 import type { Group, MockStore, Project, Rule, Variant } from '../types.js';
 import type { Command, CommandResult } from './types.js';
 
@@ -330,7 +331,11 @@ export function reduce(
         defaultShellTemplateId: null,
       };
       return {
-        store: { ...store, projects: [...store.projects, project], activeProjectId: project.id },
+        store: {
+          ...store,
+          projects: [...store.projects, project],
+          activeProjectId: cmd.payload.activate === false ? store.activeProjectId : project.id,
+        },
         result: { ok: true, createdId: project.id },
       };
     }
@@ -485,8 +490,10 @@ export function reduce(
 
     case 'IMPORT_STORE': {
       // 导入的数据可能来自旧版本，必须走 migrate（也顺带做了结构自愈）
-      const { store: incoming, reset, reason } = migrate(cmd.payload.raw, ctx.idFactory);
+      const migrated = migrate(cmd.payload.raw, ctx.idFactory);
+      const { reset, reason } = migrated;
       if (reset) return fail(store, `导入失败：${reason}`);
+      const incoming = organizeLegacyRules(migrated.store, ctx.idFactory).store;
 
       if (cmd.payload.mode === 'replace') {
         return { store: incoming, result: { ok: true } };

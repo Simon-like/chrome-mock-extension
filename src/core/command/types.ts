@@ -79,7 +79,7 @@ export type Command =
   | { type: 'DELETE_VARIANT'; payload: { ruleId: string; variantId: string } }
   | { type: 'REORDER_VARIANT'; payload: { ruleId: string; variantId: string; toIndex: number } }
   // ── 项目 ──
-  | { type: 'CREATE_PROJECT'; payload: { name: string } }
+  | { type: 'CREATE_PROJECT'; payload: { name: string; activate?: boolean } }
   | { type: 'UPDATE_PROJECT'; payload: { id: string; patch: Partial<Omit<Project, 'id'>> } }
   /**
    * 删除项目。cascade 决定其下的分组与规则怎么办：

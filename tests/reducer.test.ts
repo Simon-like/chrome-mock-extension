@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { reduce, type ReduceContext } from '../src/core/command/reducer.js';
-import { createDefaultStore, createRuleDraft } from '../src/core/store/defaults.js';
+import { createDefaultStore, createRuleDraft, materializeRule } from '../src/core/store/defaults.js';
 import type { MockStore } from '../src/core/types.js';
 
 function makeCtx(): ReduceContext {
@@ -65,6 +65,41 @@ describe('CREATE_RULE', () => {
     const original = createDefaultStore();
     withRule(original, ctx, 'A', '/api/a');
     expect(original.rules).toHaveLength(0);
+  });
+});
+
+describe('IMPORT_STORE', () => {
+  it('当前 schema 的未归档规则导入后也会自动建项目和分组', () => {
+    const ctx = makeCtx();
+    const incoming = createDefaultStore();
+    incoming.rules.push(
+      materializeRule(
+        createRuleDraft({
+          name: '商品列表',
+          match: {
+            urlMode: 'contains',
+            url: '/gateway/api/goods/list',
+            methods: ['GET'],
+            hosts: ['shop.test'],
+          },
+        }),
+        ctx.idFactory,
+        ctx.now(),
+      ),
+    );
+
+    const out = reduce(
+      createDefaultStore(),
+      { type: 'IMPORT_STORE', payload: { raw: incoming, mode: 'merge' } },
+      ctx,
+    );
+    expect(out.result.ok).toBe(true);
+    expect(out.store.projects[0]!.hostScope.patterns).toEqual(['shop.test']);
+    expect(out.store.groups[0]!.name).toBe('goods');
+    expect(out.store.rules[0]).toMatchObject({
+      projectId: out.store.projects[0]!.id,
+      groupId: out.store.groups[0]!.id,
+    });
   });
 });
 

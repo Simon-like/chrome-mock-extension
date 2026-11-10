@@ -8,8 +8,8 @@
  * 本文件属于 core 层，铁律：不允许出现 chrome.* / window.* / document.*
  */
 
-/** 当前 Schema 版本。v2 引入项目层与变体 */
-export const CURRENT_SCHEMA_VERSION = 2;
+/** 当前 Schema 版本。v3 为历史规则补齐可推断的项目与分组归属 */
+export const CURRENT_SCHEMA_VERSION = 3;
 
 export type HttpMethod =
   | 'GET'

@@ -47,6 +47,7 @@ export function registerPrompts(server: McpServer): void {
           '找出失败的或返回空的那条 —— 不要问我要 URL\n' +
           '2. 用 get_request_detail 看它的真实响应，确认字段结构\n' +
           '3. 用 create_mock 补上，字段要贴合前端已经在用的那套\n' +
+          '   create_mock 会自动归档到当前站点项目和对应业务分组，不要关闭 auto_organize\n' +
           '4. 做完提醒我刷新页面\n' +
           (hint ? `\n补充线索：${hint}` : ''),
       ),

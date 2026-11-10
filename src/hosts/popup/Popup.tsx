@@ -9,13 +9,22 @@ import { useEffect, useState } from 'react';
 import { useStore } from '@ui/useStore.js';
 import { Switch } from '@ui/Switch.js';
 import type { Rule } from '@core/types.js';
+import { selectPageRules } from '@core/store/pageRules.js';
+import { fetchCaptures } from '@shared/rpc.js';
+
+interface PageContext {
+  host: string;
+  hitRuleIds: string[];
+}
 
 export function Popup() {
   const { store, loading, error, run } = useStore();
   const [engineStats, setEngineStats] = useState<EngineStats | null>(null);
+  const [pageContext, setPageContext] = useState<PageContext | null | undefined>(undefined);
 
   useEffect(() => {
     void readEngineStats().then(setEngineStats);
+    void readPageContext().then(setPageContext);
   }, []);
 
   if (loading) {
@@ -31,7 +40,12 @@ export function Popup() {
   }
 
   const activeRules = store.rules.filter((r) => r.enabled);
-  const virtualCount = activeRules.filter((r) => r.kind === 'virtual').length;
+  const pageRules = selectPageRules(
+    store,
+    pageContext?.host ?? null,
+    pageContext?.hitRuleIds ?? [],
+  );
+  const virtualCount = pageRules.rules.filter((r) => r.enabled && r.kind === 'virtual').length;
 
   return (
     <div style={{ width: 340, padding: 14 }}>
@@ -63,11 +77,16 @@ export function Popup() {
           }}
           className="warn"
         >
-          有 {virtualCount} 个虚拟接口正在生效。停用后这些请求会真的失败。
+          本页有 {virtualCount} 个虚拟接口正在生效。停用后这些请求会真的失败。
         </div>
       )}
 
-      <Stat label="启用规则" value={`${activeRules.length} / ${store.rules.length}`} />
+      <Stat
+        label="本页启用"
+        value={`${pageRules.enabledCount} / ${pageRules.rules.length}`}
+        highlight={pageRules.enabledCount > 0}
+      />
+      <Stat label="全部规则" value={`${activeRules.length} / ${store.rules.length} 启用`} />
       {engineStats && (
         <>
           <Stat label="本页已拦截" value={String(engineStats.observed + engineStats.mocked)} />
@@ -80,19 +99,41 @@ export function Popup() {
         </>
       )}
 
-      {store.rules.length > 0 && (
-        <div style={{ marginTop: 12, maxHeight: 200, overflowY: 'auto' }}>
-          {store.rules.slice(0, 8).map((r) => (
-            <RuleRow
-              key={r.id}
-              rule={r}
-              onToggle={(enabled) =>
-                void run({ type: 'TOGGLE_RULE', payload: { id: r.id, enabled } })
-              }
-            />
-          ))}
+      <div style={{ marginTop: 12 }}>
+        <div className="row" style={{ justifyContent: 'space-between', marginBottom: 4 }}>
+          <strong style={{ fontSize: 12 }}>本页规则</strong>
+          <span className="muted mono" style={{ fontSize: 10 }}>{pageContext?.host ?? '非网页标签'}</span>
         </div>
-      )}
+        {pageContext === undefined ? (
+          <div className="muted" style={{ padding: '8px 0', fontSize: 11 }}>正在识别当前页面…</div>
+        ) : pageRules.rules.length > 0 ? (
+          <div style={{ maxHeight: 190, overflowY: 'auto' }}>
+            {pageRules.rules.map((r) => (
+              <RuleRow
+                key={r.id}
+                rule={r}
+                onToggle={(enabled) =>
+                  void run({ type: 'TOGGLE_RULE', payload: { id: r.id, enabled } })
+                }
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="muted" style={{ padding: '8px 0', fontSize: 11 }}>
+            当前页面还没有命中或绑定域名的规则
+          </div>
+        )}
+        {pageRules.hiddenGlobalCount > 0 && (
+          <button
+            className="ghost"
+            style={{ width: '100%', marginTop: 4, fontSize: 10 }}
+            onClick={() => chrome.runtime.openOptionsPage()}
+          >
+            另有 {pageRules.hiddenGlobalCount} 条未限定域名的历史规则
+            {pageRules.hiddenGlobalEnabledCount > 0 ? `（${pageRules.hiddenGlobalEnabledCount} 条启用）` : ''}，去整理
+          </button>
+        )}
+      </div>
 
       <DynamicProbe />
 
@@ -236,6 +277,21 @@ async function readEngineStats(): Promise<EngineStats | null> {
       },
     });
     return (results[0]?.result as EngineStats | null) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function readPageContext(): Promise<PageContext | null> {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id || !/^https?:/.test(tab.url ?? '')) return null;
+    const captures = await fetchCaptures(tab.id);
+    const hitRuleIds = [...captures]
+      .reverse()
+      .map((entry) => entry.ruleId)
+      .filter((id): id is string => !!id);
+    return { host: new URL(tab.url!).hostname.toLowerCase(), hitRuleIds };
   } catch {
     return null;
   }

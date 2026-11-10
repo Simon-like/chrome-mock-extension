@@ -96,6 +96,7 @@ async function main(): Promise<void> {
         '   只有必须看原始内容时才用 sample/full，并按 nextCursor 分段续读\n' +
         '3. create_mock / update_mock / add_variant —— 按上下文选择；接口本来不存在用 kind:"virtual"；\n' +
         '   要一批像真的数据用 body_type:"mockjs"；要随参数变用 "dynamic"\n' +
+        '   create_mock 默认按活动页域名创建/复用项目、按接口路径创建/复用分组，不要再留一堆未归档规则\n' +
         '4. **告诉用户刷新页面** —— 已经发出去的请求不会重来\n\n' +
         '【常见需求对应哪个工具】\n' +
         '  测空态/报错/超时 → create_mock 传多个 variants，或 add_variant，再 set_active_variant 切\n' +

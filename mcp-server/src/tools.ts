@@ -31,6 +31,15 @@ import type { MockStore, Rule } from '../../src/core/types.js';
 import type { Command } from '../../src/core/command/types.js';
 import { createRuleDraft, createResponseSpec } from '../../src/core/store/defaults.js';
 import { findShadowedRules } from '../../src/core/store/validate.js';
+import { matchHostScope } from '../../src/core/engine/matcher.js';
+import {
+  deriveGroupName,
+  findGroup,
+  findProjectByHosts,
+  hostFromPageUrl,
+  normalizeHostPatterns,
+  projectNameFromHosts,
+} from '../../src/core/store/organize.js';
 import { presentCaptureDetail } from '../../src/core/mcp/responseDetail.js';
 import type { ResponseSpec } from '../../src/core/types.js';
 
@@ -382,7 +391,13 @@ export function registerTools(server: McpServer, bridge: BridgeTransport): void 
         hosts: z
           .array(z.string())
           .optional()
-          .describe('限定域名。**强烈建议填**，不填的话别的站点上同名路径也会被 mock'),
+          .describe('限定域名。不填时默认从当前活动页面推断，并自动建立域名项目'),
+        project_id: z.string().optional().describe('可选：明确放入已有项目；通常无需填写'),
+        group_id: z.string().optional().describe('可选：明确放入已有分组；通常无需填写'),
+        auto_organize: z
+          .boolean()
+          .optional()
+          .describe('默认 true：按活动页域名和接口业务路径自动创建/复用项目与分组'),
         kind: z.enum(['override', 'virtual']).optional().describe('默认 override'),
         ...variantShape,
         variants: z
@@ -401,9 +416,21 @@ export function registerTools(server: McpServer, bridge: BridgeTransport): void 
           : [{ name: '默认', response: toResponseSpec(a) }];
 
       const before = await getState();
+      const placement = await ensurePlacement({
+        store: before,
+        url: a.url,
+        hosts: a.hosts,
+        projectId: a.project_id,
+        groupId: a.group_id,
+        autoOrganize: a.auto_organize ?? true,
+        bridge,
+        dispatch,
+      });
       const draft = createRuleDraft({
         name: a.name,
         kind: a.kind ?? 'override',
+        projectId: placement.projectId,
+        groupId: placement.groupId,
         match: {
           urlMode: a.url_mode ?? 'contains',
           url: a.url,
@@ -411,6 +438,7 @@ export function registerTools(server: McpServer, bridge: BridgeTransport): void 
           hosts: a.hosts ?? [],
         },
         variants,
+        meta: { source: 'ai' },
       });
       const r = await dispatch({ type: 'CREATE_RULE', payload: { draft } });
 
@@ -418,12 +446,13 @@ export function registerTools(server: McpServer, bridge: BridgeTransport): void 
       const notes = [
         ...duplicateNotes(before, a.url, a.methods),
         ...shadowNotes(after, r.createdId ?? ''),
-        ...scopeNotes(a.methods, a.hosts),
+        ...scopeNotes(a.methods, a.hosts, placement.projectId),
       ];
 
       return text(
         `✅ 已创建规则「${a.name}」（id: ${r.createdId}）` +
           (variants.length > 1 ? `，含 ${variants.length} 个变体，默认生效「${variants[0]!.name}」` : '') +
+          (placement.label ? `，已归档到 ${placement.label}` : '') +
           '。\n规则立即生效，但**页面已经发出的请求不会重来** —— 让用户刷新页面。' +
           (notes.length ? `\n\n${notes.join('\n')}` : ''),
       );
@@ -685,10 +714,10 @@ function duplicateNotes(store: MockStore, url: string, methods?: string[]): stri
 }
 
 /** 匹配条件太宽的提醒。不阻止，只是让 AI 知道自己刚做了什么 */
-function scopeNotes(methods?: string[], hosts?: string[]): string[] {
+function scopeNotes(methods?: string[], hosts?: string[], projectId?: string | null): string[] {
   const missing: string[] = [];
   if (!methods || methods.length === 0) missing.push('请求方法');
-  if (!hosts || hosts.length === 0) missing.push('域名');
+  if ((!hosts || hosts.length === 0) && !projectId) missing.push('域名');
   return missing.length === 0
     ? []
     : [
@@ -718,6 +747,8 @@ function ruleBrief(r: Rule) {
     name: r.name,
     enabled: r.enabled,
     kind: r.kind,
+    projectId: r.projectId,
+    groupId: r.groupId,
     match: r.match,
     hitCount: r.meta.hitCount,
     activeVariantId: r.activeVariantId,
@@ -727,5 +758,127 @@ function ruleBrief(r: Rule) {
       status: v.response.status,
       bodyType: v.response.bodyType,
     })),
+  };
+}
+
+interface PlacementInput {
+  store: MockStore;
+  url: string;
+  hosts?: string[];
+  projectId?: string;
+  groupId?: string;
+  autoOrganize: boolean;
+  bridge: BridgeTransport;
+  dispatch: (command: Command) => Promise<{ createdId?: string }>;
+}
+
+async function ensurePlacement(input: PlacementInput): Promise<{
+  projectId: string | null;
+  groupId: string | null;
+  label: string | null;
+}> {
+  let store = input.store;
+
+  if (input.groupId) {
+    const group = store.groups.find((item) => item.id === input.groupId);
+    if (!group) throw new Error(`分组不存在：${input.groupId}`);
+    const project = group.projectId
+      ? store.projects.find((item) => item.id === group.projectId)
+      : undefined;
+    return {
+      projectId: group.projectId,
+      groupId: group.id,
+      label: project ? `「${project.name} / ${group.name}」` : `全局分组「${group.name}」`,
+    };
+  }
+
+  if (!input.autoOrganize) {
+    if (input.projectId && !store.projects.some((item) => item.id === input.projectId)) {
+      throw new Error(`项目不存在：${input.projectId}`);
+    }
+    return { projectId: input.projectId ?? null, groupId: null, label: null };
+  }
+
+  let projectId = input.projectId ?? null;
+  if (projectId && !store.projects.some((item) => item.id === projectId)) {
+    throw new Error(`项目不存在：${projectId}`);
+  }
+
+  let hosts = normalizeHostPatterns(input.hosts ?? []);
+  if (!projectId && hosts.length === 0) {
+    try {
+      const context = (await input.bridge.request({
+        type: 'GET_CAPTURES',
+        activeTab: true,
+        limit: 1,
+      })) as Extract<BridgeData, { kind: 'captures' }>;
+      const host = hostFromPageUrl(context.page?.url);
+      if (host) hosts = [host];
+    } catch {
+      // 读侧关闭或页面不可用时，降级到全局分组；创建规则本身仍然可用。
+    }
+  }
+
+  if (!projectId && hosts.length > 0) {
+    let project =
+      findProjectByHosts(store, hosts) ??
+      store.projects.find(
+        (item) =>
+          item.hostScope.mode === 'include' &&
+          item.hostScope.patterns.length > 0 &&
+          hosts.every((host) => matchHostScope([], item.hostScope, host)),
+      );
+    if (!project) {
+      const created = await input.dispatch({
+        type: 'CREATE_PROJECT',
+        payload: { name: projectNameFromHosts(hosts), activate: false },
+      });
+      if (!created.createdId) throw new Error('项目创建成功但没有返回 id');
+      await input.dispatch({
+        type: 'UPDATE_PROJECT',
+        payload: {
+          id: created.createdId,
+          patch: { hostScope: { mode: 'include', patterns: hosts } },
+        },
+      });
+      store = {
+        ...store,
+        projects: [
+          ...store.projects,
+          {
+            id: created.createdId,
+            name: projectNameFromHosts(hosts),
+            hostScope: { mode: 'include', patterns: hosts },
+            defaultShellTemplateId: null,
+          },
+        ],
+      };
+      project = store.projects.at(-1);
+    }
+    projectId = project?.id ?? null;
+  }
+
+  const groupName = deriveGroupName(input.url);
+  let group = findGroup(store, projectId, groupName);
+  if (!group) {
+    const created = await input.dispatch({
+      type: 'CREATE_GROUP',
+      payload: { name: groupName, projectId },
+    });
+    if (!created.createdId) throw new Error('分组创建成功但没有返回 id');
+    group = {
+      id: created.createdId,
+      name: groupName,
+      projectId,
+      collapsed: false,
+      defaultShellTemplateId: null,
+    };
+  }
+
+  const project = projectId ? store.projects.find((item) => item.id === projectId) : undefined;
+  return {
+    projectId,
+    groupId: group.id,
+    label: project ? `「${project.name} / ${group.name}」` : `全局分组「${group.name}」`,
   };
 }

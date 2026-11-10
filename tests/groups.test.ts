@@ -62,6 +62,19 @@ describe('项目', () => {
     expect(store.activeProjectId).toBe(store.projects[0]!.id);
   });
 
+  it('后台自动建项目时可以不切换管理页当前项目', () => {
+    const ctx = makeCtx();
+    let store = addProject(createDefaultStore(), ctx, '当前项目').store;
+    const activeId = store.activeProjectId;
+    store = reduce(
+      store,
+      { type: 'CREATE_PROJECT', payload: { name: 'AI 自动项目', activate: false } },
+      ctx,
+    ).store;
+    expect(store.activeProjectId).toBe(activeId);
+    expect(store.projects.map((project) => project.name)).toEqual(['当前项目', 'AI 自动项目']);
+  });
+
   it('项目名为空时拒绝创建', () => {
     const ctx = makeCtx();
     const { store, result } = addProject(createDefaultStore(), ctx, '   ');
@@ -494,4 +507,3 @@ describe('批量操作', () => {
     expect(out.store).toBe(store);
   });
 });
-

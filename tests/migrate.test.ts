@@ -97,17 +97,17 @@ describe('v1 → v2 迁移', () => {
     expect(notices.some((t) => t.includes('变体'))).toBe(true);
   });
 
-  it('不自动创建项目 —— 规则保持未归档，由用户自行整理', () => {
+  it('v3 不改动已有分组归属', () => {
     const { store } = migrate(v1Store(), id);
-    expect(store.projects).toEqual([]);
-    expect(store.rules[0]!.projectId).toBeNull();
-    expect(store.groups.every((g) => g.projectId === null)).toBe(true);
+    const rule = store.rules[0]!;
+    expect(rule.groupId).toBe('g1');
+    expect(rule.projectId).toBeNull();
   });
 
-  it('版本号升到 v2', () => {
+  it('版本号升到当前版本', () => {
     const { store } = migrate(v1Store(), id);
     expect(store.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
-    expect(store.schemaVersion).toBe(2);
+    expect(store.schemaVersion).toBe(3);
   });
 
   it('缺 schemaVersion 的数据按 v1 处理（早期版本没写这个字段）', () => {
@@ -116,6 +116,45 @@ describe('v1 → v2 迁移', () => {
     const { store, reset } = migrate(raw, id);
     expect(reset).toBe(false);
     expect(store.rules[0]!.variants).toHaveLength(1);
+  });
+});
+
+describe('v2 → v3 规则整理', () => {
+  it('带 hosts 的未分组规则自动进入域名项目和业务分组', () => {
+    const { store, notices } = migrate(
+      {
+        schemaVersion: 2,
+        rules: [
+          {
+            id: 'r2',
+            name: '需求查询',
+            enabled: true,
+            projectId: null,
+            groupId: null,
+            kind: 'override',
+            match: {
+              urlMode: 'contains',
+              url: '/gateway/api/jinying/requirement/query',
+              methods: ['POST'],
+              hosts: ['idt.jd.com'],
+            },
+            variants: [{ id: 'v2', name: '默认', response: { body: '{}' } }],
+            activeVariantId: 'v2',
+            meta: { createdAt: 1, updatedAt: 2, source: 'ai', hitCount: 3, lastHitAt: 4 },
+          },
+        ],
+      },
+      id,
+    );
+
+    expect(store.projects[0]!.hostScope.patterns).toEqual(['idt.jd.com']);
+    expect(store.groups[0]).toMatchObject({ name: 'jinying', projectId: store.projects[0]!.id });
+    expect(store.rules[0]).toMatchObject({
+      projectId: store.projects[0]!.id,
+      groupId: store.groups[0]!.id,
+      meta: { hitCount: 3, lastHitAt: 4 },
+    });
+    expect(notices.some((notice) => notice.includes('自动归档'))).toBe(true);
   });
 });
 
@@ -253,7 +292,8 @@ describe('结构自愈', () => {
       id,
     );
     expect(store.rules).toHaveLength(1);
-    expect(store.groups).toHaveLength(0);
+    expect(store.groups).toHaveLength(1);
+    expect(store.groups[0]!.name).toBe('其他接口');
     expect(store.projects).toHaveLength(0);
   });
 

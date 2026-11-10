@@ -1,10 +1,17 @@
 import { useEffect, useState } from 'react';
-import type { Settings, ThemeId } from '@core/types.js';
+import type { MockStore, Settings, ThemeId } from '@core/types.js';
+import {
+  LOCAL_STORAGE_QUOTA_BYTES,
+  estimateRuleCapacity,
+  estimateStoreBytes,
+  formatBytes,
+} from '@core/store/storageUsage.js';
 import { Switch } from '@ui/Switch.js';
 import { GearIcon } from './ProjectSidebar.js';
 
 interface Props {
   settings: Settings;
+  store: MockStore;
   onSave: (patch: Partial<Settings>) => void;
   onOpenMcp: () => void;
   onClose: () => void;
@@ -36,11 +43,14 @@ const THEMES: Array<{
   },
 ];
 
-export function AppSettings({ settings, onSave, onOpenMcp, onClose }: Props) {
+export function AppSettings({ settings, store, onSave, onOpenMcp, onClose }: Props) {
   const [theme, setTheme] = useState(settings.theme);
   const [captureEnabled, setCaptureEnabled] = useState(settings.captureEnabled);
   const [captureMaxCount, setCaptureMaxCount] = useState(String(settings.captureMaxCount));
   const [pageSize, setPageSize] = useState(String(settings.pageSize));
+  const storageBytes = estimateStoreBytes(store);
+  const storagePercent = Math.min(100, (storageBytes / LOCAL_STORAGE_QUOTA_BYTES) * 100);
+  const estimatedRuleCapacity = estimateRuleCapacity(store);
 
   // 选中时立即预览整页效果；取消或关闭时由 store 中已保存的主题恢复。
   useEffect(() => {
@@ -101,6 +111,31 @@ export function AppSettings({ settings, onSave, onOpenMcp, onClose }: Props) {
             <div className="settings-fields">
               <label><span>最多保留请求</span><input type="number" min="20" max="2000" value={captureMaxCount} onChange={(e) => setCaptureMaxCount(e.target.value)} /></label>
               <label><span>规则每页数量</span><input type="number" min="5" max="100" value={pageSize} onChange={(e) => setPageSize(e.target.value)} /></label>
+            </div>
+          </section>
+
+          <section className="settings-section">
+            <div className="settings-section__title"><b>规则存储</b><span>容量取决于响应体大小，不是固定条数</span></div>
+            <div className="settings-row">
+              <div>
+                <b>{store.rules.length} 条规则 · {formatBytes(storageBytes)} / {formatBytes(LOCAL_STORAGE_QUOTA_BYTES)}</b>
+                <span>
+                  {estimatedRuleCapacity
+                    ? `按当前平均大小估算总容量约 ${estimatedRuleCapacity.toLocaleString()} 条（非硬上限）`
+                    : '创建规则后会按实际平均大小估算可存条数'}
+                </span>
+              </div>
+              <strong className={storagePercent >= 80 ? 'warn' : 'muted'}>{storagePercent.toFixed(1)}%</strong>
+            </div>
+            <div style={{ height: 6, borderRadius: 999, overflow: 'hidden', background: 'var(--surface-hover)' }}>
+              <div
+                style={{
+                  width: `${Math.max(storagePercent, storageBytes > 0 ? 0.5 : 0)}%`,
+                  height: '100%',
+                  borderRadius: 999,
+                  background: storagePercent >= 80 ? 'var(--warn)' : 'var(--accent)',
+                }}
+              />
             </div>
           </section>
 

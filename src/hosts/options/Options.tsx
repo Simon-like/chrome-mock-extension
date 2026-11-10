@@ -643,6 +643,7 @@ export function Options() {
       {appSettingsOpen && (
         <AppSettings
           settings={store.settings}
+          store={store}
           onSave={(patch) => void run({ type: 'UPDATE_SETTINGS', payload: { patch } })}
           onOpenMcp={() => {
             setAppSettingsOpen(false);

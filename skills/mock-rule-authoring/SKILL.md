@@ -23,6 +23,9 @@ get_request_detail(id)                       ← 要对齐真实数据结构时
 create_mock(...)                             ← 直接写进去
 ```
 
+`create_mock` 默认会读取活动页域名，创建或复用对应项目，再按接口路径的第一个业务段
+创建或复用分组。除非用户明确指定归属，不要传 `auto_organize: false`。
+
 要测多种状态就在 `create_mock` 里一次传 `variants`（正常/空数据/报错/超时），
 之后 `set_active_variant` 一键切 —— 别建多条规则再互相启停，那会互相遮蔽。
 给已有规则补一份响应用 `add_variant`（`update_mock` 是**覆盖**，会把原数据冲掉）。
@@ -38,7 +41,8 @@ create_mock(...)                             ← 直接写进去
      - 不确定就问一句，别猜
    - **要不要多个变体**？用户提到「正常/空/报错」「几种状态」「切换」就是要
 2. 生成规则 JSON，输出到代码块里
-3. 告诉用户：复制 → 扩展的规则管理页 → 点「剪贴板导入」
+3. `match.hosts` 尽量填当前站点域名；扩展导入时会据此自动建/复用项目，并按 URL 业务段自动分组
+4. 告诉用户：复制 → 扩展的规则管理页 → 点「剪贴板导入」
 
 ## 输出格式
 
@@ -111,7 +115,7 @@ create_mock(...)                             ← 直接写进去
 | `match.url` | **只写 path，不要带 query**。带了 `?page=1` 用户翻页规则就失效了 |
 | `match.methods` | 空数组 `[]` = 匹配所有方法 |
 | `match.hosts` | 空数组 = 不限。**规则挂在项目下时留空** —— 项目已经绑定域名了 |
-| `projectId` / `groupId` | 不知道就填 `null`，用户可以在界面上拖进去 |
+| `projectId` / `groupId` | 没有现成 id 就填 `null`；导入时会根据 `hosts` 和 URL 自动归档，不再要求人工拖动 |
 | `bodyType` | `"static"`（body 是 JSON）/ `"mockjs"`（body 是数据模板）/ `"dynamic"`（body 是 JS 源码）。三者见下 |
 | `delayMs` | 模拟慢网络，默认 0 |
 | `behavior` | `"normal"`（默认）/ `"timeout"`（请求挂起）/ `"networkError"`（网络错误） |
