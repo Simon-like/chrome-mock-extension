@@ -1,6 +1,9 @@
 node_modules/
 dist/
 
+# Release 打包产物（node scripts/pack-release.mjs 生成，挂 GitHub Release 用）
+release/
+
 # 注入脚本的构建产物。由 npm run build:inject 生成，
 # 放在 public/ 只是为了让 vite 原样拷进 dist（见 vite.inject.config.ts）
 public/inject.js
@@ -8,3 +11,7 @@ public/inject.js.map
 
 .DS_Store
 *.log
+
+# MCP 客户端配置：里面有配对码（等同于本机 mock 的访问口令），不能进版本库。
+# 配置模板在扩展设置页里点「复制整段」就有，不需要靠 git 分发。
+.mcp.json

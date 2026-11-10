@@ -1,0 +1,53 @@
+{
+  "name": "mock-studio-mcp",
+  "version": "0.2.0",
+  "private": false,
+  "type": "module",
+  "description": "Mock Studio 的 MCP Server —— 让 AI 看到页面实际发了哪些请求，并直接写 mock 规则",
+  "keywords": [
+    "mcp",
+    "mock",
+    "chrome-extension",
+    "claude",
+    "cursor",
+    "ai-tools"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "bin": {
+    "mock-studio-mcp": "dist/bundle/mock-studio-mcp.mjs"
+  },
+  "files": [
+    "dist/bundle"
+  ],
+  "//": [
+    "npm 发布的是 dist/bundle 里的【零依赖单文件】，不是 tsc 的目录树产物。",
+    "用户配置因此可以写成 npx -y mock-studio-mcp，没有任何本地路径。",
+    "tsc 那套（dist/mcp-server/src）只保留给本仓库的 e2e 和类型检查用。"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node build-bundle.mjs",
+    "bundle": "node build-bundle.mjs",
+    "dev": "tsc -p tsconfig.json --watch",
+    "start": "node dist/bundle/mock-studio-mcp.mjs",
+    "install-clients": "node dist/bundle/mock-studio-mcp.mjs install",
+    "e2e": "npm run build && node e2e.mjs",
+    "test:install": "npm run build && node install-e2e.mjs",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "ws": "^8.18.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.12",
+    "esbuild": "^0.21.5"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

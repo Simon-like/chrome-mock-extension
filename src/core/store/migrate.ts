@@ -22,6 +22,7 @@ import {
   createDefaultStore,
   createResponseSpec,
 } from './defaults.js';
+import { organizeLegacyRules } from './organize.js';
 
 type Bag = Record<string, unknown>;
 type Migration = (old: Bag, idFactory: () => string) => Bag;
@@ -31,6 +32,7 @@ type Migration = (old: Bag, idFactory: () => string) => Bag;
  */
 const migrations: Record<number, Migration> = {
   2: migrateV1ToV2,
+  3: migrateV2ToV3,
 };
 
 export interface MigrateResult {
@@ -86,9 +88,27 @@ export function migrate(raw: unknown, idFactory: () => string = fallbackId): Mig
       }
       notices.push('规则的响应已包装为「默认」变体，可在编辑器里新增更多变体');
     }
+    if (next === 3) {
+      notices.push('历史规则已按域名和接口路径自动归档；无法判断域名的规则仅整理到全局分组');
+    }
   }
 
   return { store: heal(store, idFactory), reset: false, notices };
+}
+
+// ═══════════════════════════════════════════════════════════
+// v2 → v3
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * 对 v2 遗留的「项目 null、分组 null」规则做一次保守整理：
+ *   - 有 hosts：按 hosts 建/复用项目，再按业务路径建/复用分组
+ *   - 无 hosts：只建全局分组，不猜它属于哪个站点
+ *   - 已有人工作过的分组归属完全不动
+ */
+function migrateV2ToV3(old: Bag, idFactory: () => string): Bag {
+  const healed = heal({ ...old, schemaVersion: 3 }, idFactory);
+  return organizeLegacyRules(healed, idFactory).store as unknown as Bag;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -101,8 +121,8 @@ export function migrate(raw: unknown, idFactory: () => string = fallbackId): Mig
  *   2. 新增 projects 与 Rule.projectId / Group.projectId
  *   3. Group.exclusive 移除（场景重做，本轮不实现）
  *
- * 不自动创建项目 —— 用户的规则保持「未归档」状态，由他自己整理。
- * 擅自建项目并把规则塞进去，反而要用户先理解再撤销。
+ * 这一步只负责结构升级，暂不创建项目；随后 v2 → v3 会对仍未分组的规则
+ * 按可验证的 hosts 与 URL 信息做保守整理。
  */
 function migrateV1ToV2(old: Bag, idFactory: () => string): Bag {
   const rules = Array.isArray(old.rules) ? (old.rules as Bag[]) : [];
@@ -166,6 +186,10 @@ function heal(s: Bag, idFactory: () => string): MockStore {
     rules: healRules(s.rules, idFactory),
     shellTemplates: mergeShellTemplates(s.shellTemplates),
     settings: {
+      theme:
+        settings.theme === 'signal' || settings.theme === 'circuit' || settings.theme === 'slate'
+          ? settings.theme
+          : def.settings.theme,
       captureEnabled: bool(settings.captureEnabled, def.settings.captureEnabled),
       captureMaxCount: posInt(settings.captureMaxCount, def.settings.captureMaxCount),
       pageSize: posInt(settings.pageSize, def.settings.pageSize),
@@ -173,6 +197,9 @@ function heal(s: Bag, idFactory: () => string): MockStore {
       aiHostWhitelist: Array.isArray(settings.aiHostWhitelist)
         ? (settings.aiHostWhitelist as string[])
         : [],
+      mcpEnabled: bool(settings.mcpEnabled, def.settings.mcpEnabled),
+      mcpPort: posInt(settings.mcpPort, def.settings.mcpPort),
+      mcpToken: typeof settings.mcpToken === 'string' ? settings.mcpToken : '',
     },
     activeProjectId: typeof s.activeProjectId === 'string' ? s.activeProjectId : null,
   };

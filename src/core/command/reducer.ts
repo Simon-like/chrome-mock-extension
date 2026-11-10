@@ -9,6 +9,7 @@
 
 import { createResponseSpec, getActiveVariant, materializeRule } from '../store/defaults.js';
 import { migrate } from '../store/migrate.js';
+import { organizeLegacyRules } from '../store/organize.js';
 import type { Group, MockStore, Project, Rule, Variant } from '../types.js';
 import type { Command, CommandResult } from './types.js';
 
@@ -36,6 +37,28 @@ export function reduce(
         store: { ...store, rules: [...store.rules, rule] },
         result: { ok: true, createdId: rule.id },
       };
+    }
+
+    case 'SAVE_RULE_DRAFT': {
+      const idx = store.rules.findIndex((r) => r.id === cmd.payload.id);
+      if (idx < 0) return notFound(store, cmd.payload.id);
+
+      const old = store.rules[idx]!;
+      // 复用新建规则的规范化：保留已有变体 id、给新变体补 id，
+      // 并把 activeVariantIndex 原子地转换成 activeVariantId。
+      const normalized = materializeRule(cmd.payload.draft, ctx.idFactory, ctx.now());
+      const next: Rule = {
+        ...normalized,
+        id: old.id,
+        meta: {
+          ...old.meta,
+          updatedAt: ctx.now(),
+          source: cmd.payload.draft.meta?.source ?? old.meta.source,
+        },
+      };
+      const rules = [...store.rules];
+      rules[idx] = next;
+      return { store: { ...store, rules }, result: { ok: true } };
     }
 
     case 'UPDATE_RULE':
@@ -308,7 +331,11 @@ export function reduce(
         defaultShellTemplateId: null,
       };
       return {
-        store: { ...store, projects: [...store.projects, project], activeProjectId: project.id },
+        store: {
+          ...store,
+          projects: [...store.projects, project],
+          activeProjectId: cmd.payload.activate === false ? store.activeProjectId : project.id,
+        },
         result: { ok: true, createdId: project.id },
       };
     }
@@ -463,8 +490,10 @@ export function reduce(
 
     case 'IMPORT_STORE': {
       // 导入的数据可能来自旧版本，必须走 migrate（也顺带做了结构自愈）
-      const { store: incoming, reset, reason } = migrate(cmd.payload.raw, ctx.idFactory);
+      const migrated = migrate(cmd.payload.raw, ctx.idFactory);
+      const { reset, reason } = migrated;
       if (reset) return fail(store, `导入失败：${reason}`);
+      const incoming = organizeLegacyRules(migrated.store, ctx.idFactory).store;
 
       if (cmd.payload.mode === 'replace') {
         return { store: incoming, result: { ok: true } };

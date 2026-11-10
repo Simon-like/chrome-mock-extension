@@ -8,7 +8,7 @@
  */
 
 import type { Command } from '@core/command/types.js';
-import type { MockStore, Rule } from '@core/types.js';
+import type { BodyGenDiagnostics, MockStore, Rule } from '@core/types.js';
 
 /** MAIN world ↔ ISOLATED 之间的 postMessage 频道标识 */
 export const PAGE_CHANNEL = '__MOCK_STUDIO__';
@@ -89,12 +89,31 @@ export interface CapturedRequest {
   /** 命中的规则 id 与名称，便于 UI 直接展示 */
   ruleId: string | null;
   ruleName: string | null;
+  /** Mock 请求发生时实际使用的变体；旧缓存记录可能没有这两个字段 */
+  variantId?: string | null;
+  variantName?: string | null;
   status: number | null;
   /** 响应体。可能被截断，见 truncated */
   body: string | null;
   truncated: boolean;
   /** 耗时（毫秒） */
   durationMs: number | null;
+  /**
+   * 用于 DevTools「重新发送」的最小请求快照。
+   *
+   * 只记录可以同步、安全序列化的请求体；Blob / FormData / Stream 等不会被读取，
+   * 避免采集行为消费业务请求流。旧缓存记录没有该字段。
+   */
+  replay?: {
+    headers: Record<string, string>;
+    body: string | null;
+    bodyUnavailable: boolean;
+  };
+  /**
+   * 响应体生成诊断。只有命中了 bodyType 非 static 的规则时才有。
+   * 面板据此标红 —— 生成失败**绝不能静默**，否则用户会以为是接口本身的问题。
+   */
+  bodyGen?: BodyGenDiagnostics;
 }
 
 // ───────────────────────────────────────────────────────────

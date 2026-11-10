@@ -11,6 +11,11 @@
 import { reduce, type ReduceContext } from '@core/command/reducer.js';
 import type { Command, CommandResult } from '@core/command/types.js';
 import { migrate } from '@core/store/migrate.js';
+import {
+  LOCAL_STORAGE_QUOTA_BYTES,
+  estimateStoreBytes,
+  formatBytes,
+} from '@core/store/storageUsage.js';
 import { clearMatcherCache } from '@core/engine/matcher.js';
 import { STORE_KEY, type MockStore } from '@core/types.js';
 import type { EngineSnapshot } from '@shared/messages.js';
@@ -36,10 +41,19 @@ export async function getState(): Promise<MockStore> {
   if (cached) return cached;
 
   const raw = await chrome.storage.local.get(STORE_KEY);
-  const { store, reset, reason } = migrate(raw[STORE_KEY]);
+  const stored = raw[STORE_KEY];
+  const { store, reset, reason } = migrate(stored);
 
   if (reset && raw[STORE_KEY] !== undefined) {
     console.warn('[MockStudio] 配置已重置：', reason);
+  }
+
+  const storedVersion =
+    stored && typeof stored === 'object' && 'schemaVersion' in stored
+      ? Number((stored as { schemaVersion?: unknown }).schemaVersion)
+      : 1;
+  if (!reset && Number.isFinite(storedVersion) && storedVersion < store.schemaVersion) {
+    await chrome.storage.local.set({ [STORE_KEY]: store });
   }
   cached = store;
   return store;
@@ -62,13 +76,30 @@ export function dispatch(cmd: Command): Promise<CommandResult> {
 
     if (!result.ok) return result;
 
+    const estimatedBytes = estimateStoreBytes(next);
+    if (estimatedBytes > LOCAL_STORAGE_QUOTA_BYTES) {
+      return {
+        ok: false,
+        error:
+          `规则数据约 ${formatBytes(estimatedBytes)}，已超过 Chrome 本地存储上限 ` +
+          `${formatBytes(LOCAL_STORAGE_QUOTA_BYTES)}。请删除不用的规则或缩小响应体。`,
+      };
+    }
+
+    try {
+      await chrome.storage.local.set({ [STORE_KEY]: next });
+    } catch (error) {
+      return {
+        ok: false,
+        error: `规则保存失败：${(error as Error).message || 'Chrome 本地存储空间不足'}`,
+      };
+    }
+
     cached = next;
     revision++;
 
     // 规则变了，matcher 里编译好的正则/通配符缓存要失效
     clearMatcherCache();
-
-    await chrome.storage.local.set({ [STORE_KEY]: next });
     return result;
   });
 

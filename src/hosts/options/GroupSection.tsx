@@ -4,13 +4,16 @@
  * 分组是纯粹的容器：规则住在里面，一条规则只属于一个分组。
  * 「同一接口的多份响应」不是分组的事，那是变体（见 VariantSwitcher）。
  *
- * 复选框语义：批量启用/停用组内规则，三态显示。
- * 分组【没有】独立的启用开关 —— 否则会出现「组开着但规则全关」这类
- * 自相矛盾的状态，用户也分不清自己点的是哪一层。
+ * 头部有两个控件，语义严格区分（同规则行）：
+ *   ☑ 复选框 = 选中组内全部规则（只在选择态出现）
+ *   ●— 开关   = 启用/停用组内全部规则，三态（全开/部分/全关）
+ * 分组【没有】独立的启用状态 —— 否则会出现「组开着但规则全关」这类
+ * 自相矛盾的状态。开关显示的是组内规则聚合出来的结果。
  */
 
 import { useEffect, useRef, useState } from 'react';
 import type { Group, Rule } from '@core/types.js';
+import { Switch } from '@ui/Switch.js';
 
 interface Props {
   /** null 表示「未分组」这个虚拟分区 */
@@ -22,6 +25,11 @@ interface Props {
   onToggleAll: (enabled: boolean) => void;
   onRename: (name: string) => void;
   onDelete: () => void;
+  /** 选择态：头部让出一个槽位放「选中组内全部」复选框 */
+  selectMode: boolean;
+  /** 组内已选中的条数，用来算三态 */
+  selectedCount: number;
+  onSelectAll: (on: boolean) => void;
   dropActive: boolean;
   onDragOver: (e: React.DragEvent) => void;
   onDragLeave: () => void;
@@ -37,6 +45,9 @@ export function GroupSection({
   onToggleAll,
   onRename,
   onDelete,
+  selectMode,
+  selectedCount,
+  onSelectAll,
   dropActive,
   onDragOver,
   onDragLeave,
@@ -46,17 +57,19 @@ export function GroupSection({
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState(group?.name ?? '');
   const [menuOpen, setMenuOpen] = useState(false);
-  const checkboxRef = useRef<HTMLInputElement>(null);
+  const pickRef = useRef<HTMLInputElement>(null);
 
   const enabledCount = rules.filter((r) => r.enabled).length;
   const allOn = rules.length > 0 && enabledCount === rules.length;
   const someOn = enabledCount > 0 && enabledCount < rules.length;
 
-  // indeterminate 只能用 JS 设，没有对应的 HTML 属性。
-  // 手动把组内规则逐个点开后，这个框会自动变成全选态 —— 状态是聚合出来的
+  const allPicked = rules.length > 0 && selectedCount === rules.length;
+  const somePicked = selectedCount > 0 && selectedCount < rules.length;
+
+  // indeterminate 只能用 JS 设，没有对应的 HTML 属性
   useEffect(() => {
-    if (checkboxRef.current) checkboxRef.current.indeterminate = someOn;
-  }, [someOn]);
+    if (pickRef.current) pickRef.current.indeterminate = somePicked;
+  }, [somePicked, selectMode]);
 
   const commitRename = () => {
     const name = draftName.trim();
@@ -94,18 +107,31 @@ export function GroupSection({
           </svg>
         </button>
 
-        <input
-          ref={checkboxRef}
-          type="checkbox"
-          checked={allOn}
+        {selectMode && (
+          <input
+            ref={pickRef}
+            type="checkbox"
+            className="group__pick"
+            checked={allPicked}
+            disabled={rules.length === 0}
+            onChange={(e) => onSelectAll(e.target.checked)}
+            title={allPicked ? '取消选中组内全部' : '选中组内全部'}
+          />
+        )}
+
+        <Switch
+          checked={allOn ? true : someOn ? 'partial' : false}
           disabled={rules.length === 0}
-          onChange={(e) => onToggleAll(e.target.checked)}
+          onChange={onToggleAll}
+          label={`启用/停用「${group?.name ?? '未分组'}」内全部规则`}
           title={
             rules.length === 0
               ? '组内没有规则'
               : allOn
                 ? '停用组内全部规则'
-                : '启用组内全部规则'
+                : someOn
+                  ? `${enabledCount}/${rules.length} 条启用 —— 点击全部启用`
+                  : '启用组内全部规则'
           }
         />
 

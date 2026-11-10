@@ -7,14 +7,24 @@
 
 import { useEffect, useState } from 'react';
 import { useStore } from '@ui/useStore.js';
+import { Switch } from '@ui/Switch.js';
 import type { Rule } from '@core/types.js';
+import { selectPageRules } from '@core/store/pageRules.js';
+import { fetchCaptures } from '@shared/rpc.js';
+
+interface PageContext {
+  host: string;
+  hitRuleIds: string[];
+}
 
 export function Popup() {
   const { store, loading, error, run } = useStore();
   const [engineStats, setEngineStats] = useState<EngineStats | null>(null);
+  const [pageContext, setPageContext] = useState<PageContext | null | undefined>(undefined);
 
   useEffect(() => {
     void readEngineStats().then(setEngineStats);
+    void readPageContext().then(setPageContext);
   }, []);
 
   if (loading) {
@@ -30,7 +40,12 @@ export function Popup() {
   }
 
   const activeRules = store.rules.filter((r) => r.enabled);
-  const virtualCount = activeRules.filter((r) => r.kind === 'virtual').length;
+  const pageRules = selectPageRules(
+    store,
+    pageContext?.host ?? null,
+    pageContext?.hitRuleIds ?? [],
+  );
+  const virtualCount = pageRules.rules.filter((r) => r.enabled && r.kind === 'virtual').length;
 
   return (
     <div style={{ width: 340, padding: 14 }}>
@@ -62,11 +77,16 @@ export function Popup() {
           }}
           className="warn"
         >
-          有 {virtualCount} 个虚拟接口正在生效。停用后这些请求会真的失败。
+          本页有 {virtualCount} 个虚拟接口正在生效。停用后这些请求会真的失败。
         </div>
       )}
 
-      <Stat label="启用规则" value={`${activeRules.length} / ${store.rules.length}`} />
+      <Stat
+        label="本页启用"
+        value={`${pageRules.enabledCount} / ${pageRules.rules.length}`}
+        highlight={pageRules.enabledCount > 0}
+      />
+      <Stat label="全部规则" value={`${activeRules.length} / ${store.rules.length} 启用`} />
       {engineStats && (
         <>
           <Stat label="本页已拦截" value={String(engineStats.observed + engineStats.mocked)} />
@@ -79,19 +99,43 @@ export function Popup() {
         </>
       )}
 
-      {store.rules.length > 0 && (
-        <div style={{ marginTop: 12, maxHeight: 200, overflowY: 'auto' }}>
-          {store.rules.slice(0, 8).map((r) => (
-            <RuleRow
-              key={r.id}
-              rule={r}
-              onToggle={(enabled) =>
-                void run({ type: 'TOGGLE_RULE', payload: { id: r.id, enabled } })
-              }
-            />
-          ))}
+      <div style={{ marginTop: 12 }}>
+        <div className="row" style={{ justifyContent: 'space-between', marginBottom: 4 }}>
+          <strong style={{ fontSize: 12 }}>本页规则</strong>
+          <span className="muted mono" style={{ fontSize: 10 }}>{pageContext?.host ?? '非网页标签'}</span>
         </div>
-      )}
+        {pageContext === undefined ? (
+          <div className="muted" style={{ padding: '8px 0', fontSize: 11 }}>正在识别当前页面…</div>
+        ) : pageRules.rules.length > 0 ? (
+          <div style={{ maxHeight: 190, overflowY: 'auto' }}>
+            {pageRules.rules.map((r) => (
+              <RuleRow
+                key={r.id}
+                rule={r}
+                onToggle={(enabled) =>
+                  void run({ type: 'TOGGLE_RULE', payload: { id: r.id, enabled } })
+                }
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="muted" style={{ padding: '8px 0', fontSize: 11 }}>
+            当前页面还没有命中或绑定域名的规则
+          </div>
+        )}
+        {pageRules.hiddenGlobalCount > 0 && (
+          <button
+            className="ghost"
+            style={{ width: '100%', marginTop: 4, fontSize: 10 }}
+            onClick={() => chrome.runtime.openOptionsPage()}
+          >
+            另有 {pageRules.hiddenGlobalCount} 条未限定域名的历史规则
+            {pageRules.hiddenGlobalEnabledCount > 0 ? `（${pageRules.hiddenGlobalEnabledCount} 条启用）` : ''}，去整理
+          </button>
+        )}
+      </div>
+
+      <DynamicProbe />
 
       <div className="row" style={{ marginTop: 14, gap: 6 }}>
         <button style={{ flex: 1 }} onClick={() => chrome.runtime.openOptionsPage()}>
@@ -100,6 +144,75 @@ export function Popup() {
       </div>
     </div>
   );
+}
+
+/**
+ * 动态响应可行性探测（Spike 工具，见 docs/experiments/SPIKE-0002-dynamic-response.md）
+ *
+ * 为什么做成手动按钮而不是自动跑：探测被 CSP 拦下会派发 securitypolicyviolation，
+ * 站点若配了 report-uri 就会收到一条我们制造的告警。这属于「在别人家里留脚印」，
+ * 必须由人主动按下才做。
+ */
+function DynamicProbe() {
+  const [result, setResult] = useState<{ available: boolean; reason?: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const probe = async () => {
+    setBusy(true);
+    setResult(await probeDynamicSupport());
+    setBusy(false);
+  };
+
+  return (
+    <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+      <button className="ghost" style={{ width: '100%' }} disabled={busy} onClick={probe}>
+        {busy ? '探测中…' : '探测：本站能否用动态响应'}
+      </button>
+      {result && (
+        <div
+          className={result.available ? 'ok' : 'warn'}
+          style={{ fontSize: 11, marginTop: 6, lineHeight: 1.5 }}
+        >
+          {result.available
+            ? '✓ 本站允许 new Function —— 动态响应可以落地'
+            : `✗ 本站 CSP 禁用了 unsafe-eval —— 动态响应在此站不可用${
+                result.reason ? `（${result.reason}）` : ''
+              }`}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 必须在 MAIN world 跑：受不受 CSP 管，取决于代码在【页面的】realm 里执行 */
+async function probeDynamicSupport(): Promise<{ available: boolean; reason?: string }> {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id || !/^https?:/.test(tab.url ?? '')) {
+      return { available: false, reason: '当前标签页不是 http(s) 页面' };
+    }
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () => {
+        const api = (
+          window as unknown as {
+            __MOCK_STUDIO__?: { probeDynamicSupport(): { available: boolean; reason?: string } };
+          }
+        ).__MOCK_STUDIO__;
+        if (!api) return { available: false, reason: '引擎未注入，请刷新页面' };
+        return api.probeDynamicSupport();
+      },
+    });
+    return (
+      (results[0]?.result as { available: boolean; reason?: string } | undefined) ?? {
+        available: false,
+        reason: '探测无返回',
+      }
+    );
+  } catch (e) {
+    return { available: false, reason: (e as Error).message };
+  }
 }
 
 function Stat({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
@@ -117,11 +230,13 @@ function Stat({ label, value, highlight }: { label: string; value: string; highl
 function RuleRow({ rule, onToggle }: { rule: Rule; onToggle: (enabled: boolean) => void }) {
   return (
     <div className="row" style={{ padding: '5px 0', gap: 6 }}>
-      <input
-        type="checkbox"
+      {/* 开关而非复选框 —— 全局统一：开关是状态，复选框是选择。见 ui/Switch.tsx */}
+      <Switch
+        size="sm"
         checked={rule.enabled}
-        onChange={(e) => onToggle(e.target.checked)}
-        style={{ width: 'auto', margin: 0 }}
+        onChange={onToggle}
+        label={`启用 / 停用「${rule.name}」`}
+        title={rule.enabled ? '已启用 —— 点击停用' : '已停用 —— 点击启用'}
       />
       <span className={`tag tag-${rule.kind}`}>{rule.kind === 'virtual' ? '虚拟' : '覆盖'}</span>
       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -162,6 +277,21 @@ async function readEngineStats(): Promise<EngineStats | null> {
       },
     });
     return (results[0]?.result as EngineStats | null) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function readPageContext(): Promise<PageContext | null> {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id || !/^https?:/.test(tab.url ?? '')) return null;
+    const captures = await fetchCaptures(tab.id);
+    const hitRuleIds = [...captures]
+      .reverse()
+      .map((entry) => entry.ruleId)
+      .filter((id): id is string => !!id);
+    return { host: new URL(tab.url!).hostname.toLowerCase(), hitRuleIds };
   } catch {
     return null;
   }

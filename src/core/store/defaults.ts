@@ -5,6 +5,7 @@
  */
 
 import {
+  DEFAULT_BRIDGE_PORT,
   CURRENT_SCHEMA_VERSION,
   type MockStore,
   type ResponseSpec,
@@ -55,11 +56,16 @@ export const BUILTIN_SHELL_TEMPLATES: ShellTemplate[] = [
 ];
 
 export const DEFAULT_SETTINGS: Settings = {
+  theme: 'circuit',
   captureEnabled: true,
   captureMaxCount: 200,
   pageSize: 15,
   aiReadEnabled: true,
   aiHostWhitelist: [],
+  // 桥默认关：开一个 localhost 连接是用户该主动做的决定，不该装完就替他做了
+  mcpEnabled: false,
+  mcpPort: DEFAULT_BRIDGE_PORT,
+  mcpToken: '',
 };
 
 export function createDefaultStore(): MockStore {

@@ -1,0 +1,347 @@
+# MCP 使用指南
+
+> 类型：Guide
+> 状态：Active
+> Owner：项目维护者
+> 更新：2026-10-26 · 面向**使用者**
+> 想知道它怎么实现的、为什么这么设计 → [MCP Server](../architecture/mcp-server.md)
+
+接上 MCP 之后，你对 AI 说一句「页面没数据，帮我 mock 一下」就完事了 ——
+不用手抄 URL，不用复制 JSON，AI 也不用猜接口长什么样。
+
+---
+
+## 0. 它到底是怎么工作的
+
+三个进程，两条链路：
+
+```
+  ① Claude Code / Cursor（你在这儿说话）
+        ↕  stdio —— 标准输入输出，MCP 协议
+  ② mock-studio-mcp（一个 Node 进程）
+        ↕  WebSocket —— 127.0.0.1:8787
+  ③ Chrome 扩展（真正拦请求的那个）
+```
+
+**关键在于②这个 Node 进程不是你手动启动的，是 MCP 客户端（Claude Code）拉起来的。**
+你在配置里写的 `command` + `args`，就是它拿去 `spawn` 的命令行。
+客户端启动时拉起来，退出时杀掉 —— 所以「重启客户端」= 「重启 MCP Server」。
+
+为什么要中间这一层：扩展里起不了 server（Chrome 不给），AI 客户端也连不了扩展。
+只能让 Node 进程两头接：一头用 stdio 说 MCP，一头开 WebSocket 等扩展连上来。
+
+三样东西必须对上，少一样就连不上：
+
+| 东西 | 扩展侧 | 客户端侧 |
+| --- | --- | --- |
+| 端口 | 设置页的「端口」 | `env.MOCK_STUDIO_PORT` |
+| 配对码 | 设置页的「配对码」 | `env.MOCK_STUDIO_TOKEN` |
+| 程序入口 | —— | `command` + `args`，指向 MCP Server |
+
+> 程序入口现在有**两种形态**：
+> `npx -y mock-studio-mcp`（已发布到 npm，配置里没有任何路径）或
+> 仓库里的零依赖单文件 `mcp-server/dist/bundle/mock-studio-mcp.mjs`。
+> 下面的接入方式都会帮你自动选对，不需要自己操心。
+
+---
+
+## 1. 一分钟接上
+
+### ① 扩展侧：开启桥
+
+规则管理页右上角 **MCP** → 打开「启用 MCP 桥」→ 配对码自动生成。
+直接使用下面的安装或复制按钮即可，它们会先保存当前设置；也可以只点「保存」稍后再接入。
+
+> 如果保存失败，弹窗会留在原处并提示，不会把尚未生效的配对码或端口发给客户端。
+
+### ② 客户端侧：任选一种接入
+
+面板上的所有安装和复制按钮都会先保存当前配对码与端口。**通用安装器是默认推荐路径**：
+
+```bash
+npx -y mock-studio-mcp install --token <配对码>
+```
+
+本地仓库版则展开「本地开发版与手动配置」，在仓库根目录运行那条 `node … install` 命令。
+
+| 客户端 | 推荐方式 | 生效方式 |
+| --- | --- | --- |
+| Cursor / VS Code | 面板「保存并安装」按钮，客户端弹确认框后同意 | 重启客户端 |
+| Claude Code | 面板的 `claude mcp add` 官方命令，或安装器 | 重启客户端；项目配置需信任 |
+| Codex CLI / IDE | 面板的 `codex mcp add` 官方命令，或 `--client codex` | 重启 Codex 会话 / IDE |
+| Kimi Code | `--client kimi-code`；用户级写入 `~/.kimi-code/mcp.json` | **新建会话**；`/mcp` 检查 |
+| Kimi CLI 旧版 | 面板的 `kimi mcp add`，或 `--client kimi-legacy` | 重启客户端 |
+| Windsurf / Claude Desktop | 通用安装器自动检测 | 重启客户端 |
+| DSH web / desktop | `--client dsh-web` / `--client dsh-desktop` | 重启对应 profile |
+
+安装器常用参数：
+
+```bash
+# 只接 Kimi Code，非默认端口
+npx -y mock-studio-mcp install --client kimi-code --token <配对码> --port 8788
+
+# 同时接多个；ID 列表以 --help 为准
+npx -y mock-studio-mcp install --client codex,kimi-code,dsh-web --token <配对码>
+
+# 同时创建 Claude Code / Kimi Code 项目级配置
+npx -y mock-studio-mcp install --project --token <配对码>
+
+# 只预览合并结果或 Codex 官方命令，不写文件、不执行客户端命令
+npx -y mock-studio-mcp install --client kimi-code,codex --token <配对码> --print
+```
+
+写入安全约定：
+
+- JSON 只替换 `mock-studio`，保留其他服务器和顶层字段；非法 JSON 或非法结构会直接失败，**不会按空配置覆盖**。
+- 已有文件备份为 `*.mock-studio.<时间戳>.bak`，再经同目录临时文件原子替换。
+- Codex 由官方 CLI 修改 `config.toml`，安装器不传 shell、不自行解析 TOML，并在调用前备份。
+- 任一目标失败会让最终退出码非零；其他目标的成功结果会保留并逐项报告。
+- DSH 只自动创建空配置或更新本安装器标记的 YAML 块。自动检测会跳过复杂 DSH 配置；显式选择时会说明原因，不会强行合并。
+
+> ⚠️ **`.mcp.json` 要加进 `.gitignore`**。里面那串配对码等同于本机 mock 的访问口令。
+> 配置随时能从设置页重新生成，不需要靠 git 分发。
+
+#### DSH 已有复杂 YAML 时怎么手动加
+
+把下面这块合并到对应 profile 的 `cordis.patch.yml`（web 通常是 `~/.dsh/profiles/web/cordis.patch.yml`）。
+注意它是原生 `insert` 结构，**不是**通用的 `mcpServers` JSON；如果文件当前只有 `[]`，用下面内容替换 `[]`：
+
+```yaml
+- insert:
+    - id: mcp-mock-studio
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: mock-studio
+        transport: stdio
+        command: npx
+        args: ['-y', 'mock-studio-mcp']
+        env:
+          MOCK_STUDIO_TOKEN: '<配对码>'
+          # 非默认端口时再加：
+          # MOCK_STUDIO_PORT: '8788'
+```
+
+DSH 0.2.x 已内置 `@deepseek-ai/dsh-mcp-client`，不需要另装旧版客户端包。项目级 `.dsh/mcp.json` 属于社区管理插件能力，不作为这里的原生安装路径。
+
+### ③ 重开客户端或会话
+
+MCP Server 是被客户端**拉起来**的（stdio 子进程）。Claude Code、Codex、Cursor、DSH 等重启对应客户端或 profile；Kimi Code 新增或编辑配置后**新建会话**，已打开的会话不会加载这项改动。
+Claude Code 首次会弹**信任提示**，要点同意 —— 这是它对项目级 `.mcp.json` 的安全机制。
+
+### ④ 确认
+
+回到扩展设置页，状态应显示 **● 已连接**，并在 AI 里问一句「当前页面有哪些请求」验证首次工具调用。
+扩展的「已连接」只代表扩展已连到本地桥；Claude Code / Codex / Kimi Code 里也可以分别用 `/mcp` 检查客户端侧状态。
+
+---
+
+## 2. 怎么用
+
+打开在发请求的页面，**刷新一下**（拦截脚本只在页面加载时注入），然后说人话：
+
+```
+页面最近发了哪些请求？
+```
+```
+/api/goods/list 没数据，帮我 mock 一下
+```
+```
+把商品列表改成返回空数组，我要看空状态
+```
+```
+让这个接口返回 500，测一下错误提示
+```
+
+AI 会自己走完：看页面缺什么 → 对齐真实数据结构 → 写进去。
+
+**规则写完记得刷新页面** —— 已经发出去的请求不会重来，这是拦截式方案的固有特性。
+
+### 几个好用的说法
+
+| 你说 | AI 会做 |
+| --- | --- |
+| 「页面哪些接口挂了」 | `list_recent_requests(only_unmocked: true)` |
+| 「照着真实返回造 20 条假数据」 | 先 `get_request_detail` 拿结构，再用 Mock 模板生成 |
+| 「翻页要能翻出不同数据」 | 用动态 JS，按 `req.query.page` 现算 |
+| 「后端还没做这个接口」 | `kind: "virtual"`，不会 404 也不触发 CORS 预检 |
+| 「现在哪些接口被 mock 了」 | `list_rules` |
+| 「mock 怎么没生效」 | `get_status` 看总开关和规则数 |
+| 「给它加个空数据的情况」 | `add_variant`，之后 `set_active_variant` 切 |
+| 「模拟一下请求超时 / 断网」 | `behavior: "timeout"` / `"networkError"` |
+
+### 改了代码怎么办
+
+**客户端跑的是编译产物，不是源码。** 所以改完要走两步：
+
+```bash
+cd mcp-server && npm run build     # ① 重新编译
+```
+
+```
+② 重启 MCP 客户端（Claude Code / Cursor）
+```
+
+| 改了什么 | 要做什么 |
+| --- | --- |
+| `mcp-server/src/**`（工具、桥） | build + 重启客户端 |
+| `src/core/**`（被 Node 侧复用的业务逻辑） | build + 重启客户端，**并且**重新加载扩展 |
+| `src/hosts/**`、`src/ui/**`（扩展 UI / 引擎） | `npm run build` 后在 `chrome://extensions` 点刷新 ↻ |
+| 只改扩展设置（端口/配对码/白名单） | 点保存即可，桥会自动重连 |
+
+漏掉「重启客户端」是最常见的困惑来源 —— 代码明明改了，行为却没变，
+因为老的 Server 进程还在跑。
+
+### 要给每个 AI 工具装 Skill 吗
+
+**不用。** MCP 自带三层机制让 AI 知道该用它，从自动到手动：
+
+| 层 | 是什么 | 谁保证 |
+| --- | --- | --- |
+| ① `instructions` | Server 上的一段说明，客户端连上时**自动注入 AI 上下文** | 大多数客户端（Claude Code 实测有效）|
+| ② 工具描述 | 13 个工具各自的说明 | **一定会被 AI 看到** |
+| ③ Prompts | 3 条可点的操作指引，客户端一般显示成条目/斜杠命令 | 不认 ① 的客户端靠它兜底 |
+
+①里写的不是「有哪些工具」（②本来就有），而是**什么时候该想起用它们**：
+列了「页面没数据 / 接口挂了 / 我要看空状态 / 后端还没做」这类触发词，
+以及标准调用顺序。这三层都有 e2e 用例钉着，确保真的送到了客户端。
+
+三条 Prompts：
+
+| 名字 | 干什么 |
+| --- | --- |
+| `fix_missing_data` | 页面没数据 → 找出缺哪个 mock 并补上 |
+| `add_test_states` | 给某接口加空数据 / 报错 / 超时变体 |
+| `why_not_working` | mock 没生效 → 按顺序排查 |
+
+**那 Skill 还有什么用**：`skills/mock-rule-authoring/` 是**没有 MCP 时的降级路径**
+（AI 生成 JSON，你手动剪贴板导入）。它开头就写了「先检查有没有 MCP，有就别用我」。
+所以两者不冲突，也不需要都装。
+
+**如果你的客户端连 ①③ 都不支持**（少见），最后一招是在那个项目的规则文件里
+（`AGENTS.md`、`.cursorrules`、JoyCode 的「规则」之类）加一句：
+
+> 涉及接口 mock、页面没数据、造假数据时，优先使用 mock-studio 这组 MCP 工具，
+> 先 `get_page_context` 看总开关、关键请求和相关规则，不要问用户要 URL。
+
+---
+
+## 3. 工具清单
+
+**读侧**（只读，不改任何东西）
+
+| 工具 | 说明 |
+| --- | --- |
+| `get_page_context` | **首选入口**：只读最后聚焦窗口的活动标签页，返回页面、状态、关键异常/未 Mock 请求、相关规则和下一步 |
+| `list_recent_requests` | 全部标签页最近的请求，最新在前。支持 `only_unmocked` / `url_filter` |
+| `get_request_detail` | 默认 `schema` 返回 JSON 结构摘要；`sample` / `full` 显式读原文，单次最多 64 KiB，用 `nextCursor` 续读 |
+| `list_rules` | 现有规则与变体 |
+| `list_shell_templates` | 可用的响应外壳 |
+| `get_status` | 总开关、生效规则数、读侧是否可用 |
+
+**写侧**
+
+| 工具 | 说明 |
+| --- | --- |
+| `create_mock` | 新建规则。默认按活动页域名创建/复用项目、按接口路径创建/复用分组；支持三种 body 类型、自定义响应头、超时/断网与多变体。建完会自动检查冲突 |
+| `add_variant` | 给已有规则**追加**一份响应（原来的不丢）。测空态/错误态用它 |
+| `update_mock` | 改某个变体的响应。⚠️ 是**覆盖**，想保留原数据用 `add_variant` |
+| `toggle_mock` | 临时停用（保留规则）|
+| `delete_mock` | 删除，**不可撤销** |
+| `set_active_variant` | 切换变体 |
+| `set_global_enabled` | 总开关 |
+
+---
+
+## 4. 隐私：AI 到底能看到什么
+
+**读侧默认开着**，AI 能看到你浏览器里被采集到的请求。这是它最有价值的部分，
+也是风险最大的部分。三层控制：
+
+### 强制脱敏（不可关）
+
+出去之前，**在扩展侧**就打码 —— 不是在 MCP 端。
+万一 WS 端口被别的进程连上，它拿到的也已经是打过码的。
+
+| 会被打掉 | 怎么识别 |
+| --- | --- |
+| `Authorization` `Cookie` `token` `password` `secret` `signature` 等 | 按**键名**（大小写/下划线/连字符/业务前缀都能命中，如 `x-jd-token`）|
+| JWT、32 位以上十六进制串 | 按**值的形状** —— 键名正常也照打 |
+| 邮箱、手机号、身份证号 | 按**值的形状** —— 挂在任何字段名下都会被抓到 |
+
+每条记录带 `redacted` 标记，让 AI 知道自己看到的不是全貌。
+
+### ⚠️ 脱敏拦不住什么（务必知道）
+
+这不是「大概能防住」，是明确的边界：
+
+- **真实姓名、部门、职位** —— `"nick": "王海"`、`"orgName": "融资技术研发部"`
+  这类值没有可识别的形状，只能靠键名，而键名千变万化。**拦不住。**
+- **接口路径本身** —— `/gateway/api/jinying/requirement/page` 会原样出去。
+  内网系统的路径结构本身可能就是敏感信息。
+- **业务数据** —— 订单金额、客户名单、需求内容，这些正是 AI 需要看到才能生成
+  贴合的 mock 的东西，不可能打掉。
+
+**结论：涉密项目请关掉读侧，或用域名白名单只放行测试环境。**
+
+### 域名白名单
+
+留空 = 不限（设置页会给黄色警告）。填上你实际在调试的域名后，
+其他站点的请求**根本不会出现**在 AI 眼里。支持通配：`*.jd.com`、`dev*.x.com`。
+
+### 读侧总开关
+
+关掉后 AI 完全看不到请求记录，写侧仍可用 —— 但你得自己告诉它接口地址。
+
+---
+
+## 5. 别的 AI 工具能用吗
+
+这是**标准 MCP Server**（stdio 传输），不是给 Claude 定制的。判断标准只有一条：
+**那个工具支不支持 MCP，且能拉起本地进程。**
+
+| 工具 | 能用吗 | 安装器适配 |
+| --- | --- | --- |
+| Claude Code / Claude Desktop | ✅ | JSON / Claude 官方 CLI |
+| Codex CLI / IDE | ✅ | Codex 官方 CLI |
+| Kimi Code / Kimi CLI 旧版 | ✅ | 两代配置路径分开适配 |
+| DSH | ✅ | 原生 `cordis.patch.yml`，复杂配置转手动 |
+| Cursor · Cline · Continue · Windsurf | ✅ | Cursor / Windsurf 有专用目标，其余用手动 JSON |
+| 任何网页版 AI | ❌ 拉不起本地进程，也连不了你的 localhost | — |
+| 其他 IDE 插件 | 看它文档里有没有 `mcpServers` 这类配置 | 手动 JSON |
+
+配置内容一个字都不用改 —— **配对码和端口是绑扩展的，不是绑项目/工具的。**
+
+客户端格式依据：[Codex MCP](https://developers.openai.com/codex/mcp)、[Kimi Code MCP](https://www.kimi.com/code/docs/kimi-code-cli/customization/mcp.html)、[DSH MCP Client](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/mcp/mcp-client/README.zh.md)。DSH 的社区项目管理插件不是官方全局配置格式，本文不混用两者。
+
+### 多个工具可以同时用
+
+Claude Code、Cursor、JoyCode 可以**同时**连着同一个扩展，配置完全一样。
+
+原理是抢端口：第一个起来的进程占住端口当 **Hub**，后面的抢不到就连上去当 **Peer**，
+把工具调用转发给 Hub。关掉任意一个工具，剩下的会自动重新选举接管 ——
+你什么都不用做。
+
+唯一要注意的：**所有工具的端口和配对码必须一致**（本来就该一致，它们绑的是扩展）。
+
+---
+
+## 6. 排查
+
+| 现象 | 原因 |
+| --- | --- |
+| 状态一直「未启用」 | 设置弹窗里没点保存 |
+| 状态「未连接」 | 客户端没重启；或 `.mcp.json` 放错目录；或信任提示没同意 |
+| 「配对码不匹配」 | 点过「重新生成」，客户端配置里还是旧的 |
+| 「端口已被占用」 | 极少见了（现在会自动当 peer）。真出现说明端口被**别的程序**占着，换个端口 |
+| 状态显示「疑似断开，正在重连…」 | 服务端超过 45 秒没消息了 —— 多半是 MCP 客户端刚退出。扩展会自己重连，不用管 |
+| 「扩展还没连上来」 | Chrome 没开、扩展被禁用、或桥开关是关的 |
+| AI 说没采集到请求 | 页面没刷新（脚本只在加载时注入）；或域名白名单把它过滤了 |
+| 规则建了但页面没变 | **忘了刷新页面** —— 十次里有九次是这个 |
+
+看 Server 日志：Claude Code 里 `/mcp`，或直接手动跑一次
+
+```bash
+MOCK_STUDIO_TOKEN=你的配对码 node mcp-server/dist/bundle/mock-studio-mcp.mjs
+```
+
+（日志全在 stderr —— stdout 是 MCP 协议专用的，往里写一个字符就会把协议流冲坏。）

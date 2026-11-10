@@ -15,6 +15,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { captureToRuleDraft } from '@core/capture/toRule.js';
+import { createRuleDraft } from '@core/store/defaults.js';
 import type { CapturedRequest } from '@shared/messages.js';
 import { DEVTOOLS_PORT_NAME } from '@shared/messages.js';
 import { clearCaptures, fetchCaptures } from '@shared/rpc.js';
@@ -22,11 +23,16 @@ import type { Rule, RuleDraft } from '@core/types.js';
 import { useStore } from '@ui/useStore.js';
 import { Splitter, useResizable } from '@ui/Splitter.js';
 import { RuleEditor } from '../options/RuleEditor.js';
+import { CodeEditor } from '@ui/CodeEditor.js';
+import { VariantSwitcher } from '@ui/VariantSwitcher.js';
 
 const inspectedTabId = chrome.devtools.inspectedWindow.tabId;
 
-/** DevTools 面板通常比较窄，默认给小一点 */
-const SIDE_DEFAULT_WIDTH = 480;
+/**
+ * 侧栏默认宽度。详情面板是左右两栏（元信息 + 响应体），
+ * 480 会把响应体挤成面条，所以给到 640；不够还能拖。
+ */
+const SIDE_DEFAULT_WIDTH = 640;
 
 export function PanelApp() {
   const { store, run } = useStore();
@@ -34,6 +40,7 @@ export function PanelApp() {
   const [filter, setFilter] = useState('');
   const [onlyMocked, setOnlyMocked] = useState(false);
   const [draft, setDraft] = useState<RuleDraft | null>(null);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [draftKey, setDraftKey] = useState(0);
   const [selected, setSelected] = useState<CapturedRequest | null>(null);
 
@@ -83,6 +90,7 @@ export function PanelApp() {
       }),
     );
     setDraftKey((k) => k + 1);
+    setEditingRuleId(null);
     setCreatedId(null); // 换了一条请求，重新算作新建
     setSelected(entry);
   };
@@ -94,8 +102,12 @@ export function PanelApp() {
   const [createdId, setCreatedId] = useState<string | null>(null);
 
   const saveDraft = async (d: RuleDraft): Promise<boolean> => {
+    if (editingRuleId) {
+      const res = await run({ type: 'SAVE_RULE_DRAFT', payload: { id: editingRuleId, draft: d } });
+      return res.ok;
+    }
     if (createdId) {
-      const res = await run({ type: 'UPDATE_RULE', payload: { id: createdId, patch: d } });
+      const res = await run({ type: 'SAVE_RULE_DRAFT', payload: { id: createdId, draft: d } });
       return res.ok;
     }
     const res = await run({ type: 'CREATE_RULE', payload: { draft: d } });
@@ -105,12 +117,96 @@ export function PanelApp() {
 
   const closeEditor = () => {
     setDraft(null);
+    setEditingRuleId(null);
     setCreatedId(null);
   };
 
+  const createVirtualEndpoint = () => {
+    setDraft(
+      createRuleDraft({
+        name: '新建虚拟接口',
+        kind: 'virtual',
+        projectId: store?.activeProjectId ?? null,
+      }),
+    );
+    setEditingRuleId(null);
+    setCreatedId(null);
+    setDraftKey((k) => k + 1);
+  };
+
+  const createBlankRule = () => {
+    setDraft(createRuleDraft({ projectId: store?.activeProjectId ?? null }));
+    setEditingRuleId(null);
+    setCreatedId(null);
+    setDraftKey((k) => k + 1);
+  };
+
+  const editRule = (rule: Rule) => {
+    setDraft(null);
+    setEditingRuleId(rule.id);
+    setCreatedId(null);
+    setDraftKey((k) => k + 1);
+  };
+
+  const replayRequest = async (entry: CapturedRequest): Promise<{ ok: boolean; message: string }> => {
+    const method = entry.method.toUpperCase();
+    const replay = entry.replay;
+    if (!replay && method !== 'GET' && method !== 'HEAD') {
+      return { ok: false, message: '旧记录没有请求体快照，请重新触发一次请求后再试' };
+    }
+    if (replay?.bodyUnavailable) {
+      return { ok: false, message: '该请求使用了 FormData、Blob 或流式请求体，暂不支持安全重放' };
+    }
+
+    const init: RequestInit = {
+      method,
+      headers: replay?.headers ?? {},
+      credentials: 'include',
+    };
+    if (method !== 'GET' && method !== 'HEAD' && replay?.body != null) init.body = replay.body;
+    const expression = `void fetch(${JSON.stringify(entry.url)}, ${JSON.stringify(init)}).catch((error) => console.error('[Mock Studio] 重新发送失败', error)); 'queued'`;
+
+    return new Promise((resolve) => {
+      chrome.devtools.inspectedWindow.eval(expression, (_result, exceptionInfo) => {
+        if (exceptionInfo?.isException || exceptionInfo?.isError) {
+          resolve({ ok: false, message: exceptionInfo.value ?? '页面拒绝执行请求' });
+          return;
+        }
+        resolve({ ok: true, message: '已重新发送，新请求会出现在列表末尾' });
+      });
+    });
+  };
+
+  /**
+   * 详情面板里直接改规则响应，不用跳去规则管理页。
+   *
+   * 只改**当前生效变体**的 body —— 其余配置（匹配条件、状态码、变体结构）
+   * 还是去完整编辑器改。这里要的是「看到不对，顺手改一下」这条最短路径。
+   */
+  const saveRuleBody = async (ruleId: string, variantId: string, body: string) => {
+    const rule = store?.rules.find((r) => r.id === ruleId);
+    const variant = rule?.variants.find((v) => v.id === variantId);
+    if (!variant) return false;
+    const res = await run({
+      type: 'UPDATE_VARIANT',
+      payload: { ruleId, variantId, patch: { response: { ...variant.response, body } } },
+    });
+    return res.ok;
+  };
+
+  /** 请求详情里的高频操作：不离开 DevTools 就切换或复制一份变体 */
+  const switchVariant = (ruleId: string, variantId: string) =>
+    run({ type: 'SET_ACTIVE_VARIANT', payload: { ruleId, variantId } });
+
+  const createVariant = (rule: Rule) =>
+    run({
+      type: 'CREATE_VARIANT',
+      payload: { ruleId: rule.id, name: `变体 ${rule.variants.length + 1}`, activate: true },
+    });
+
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+    <div className="devtools-shell">
+      <div className="devtools-main">
         <Toolbar
           filter={filter}
           onFilter={setFilter}
@@ -129,6 +225,8 @@ export function PanelApp() {
             await clearCaptures();
             setEntries([]);
           }}
+          onCreateVirtual={createVirtualEndpoint}
+          onCreateRule={createBlankRule}
         />
 
         <div style={{ flex: 1, overflowY: 'auto' }}>
@@ -153,13 +251,14 @@ export function PanelApp() {
                 matchedRule={store?.rules.find((r) => r.id === e.ruleId)}
                 onConvert={() => convertToMock(e)}
                 onSelect={() => setSelected(e)}
+                onEditRule={matchedRule => editRule(matchedRule)}
               />
             ))
           )}
         </div>
       </div>
 
-      {(draft || selected) && (
+      {(draft || editingRuleId || selected) && (
         <Splitter
           onResize={sidePane.setWidth}
           onDragStateChange={sidePane.setDragging}
@@ -167,11 +266,13 @@ export function PanelApp() {
         />
       )}
 
-      {draft ? (
+      {draft || editingRuleId ? (
         <div style={{ width: sidePane.width, flexShrink: 0, minWidth: 0 }}>
           <RuleEditor
             key={draftKey}
-            initialDraft={draft}
+            initial={editingRuleId ? store?.rules.find((rule) => rule.id === editingRuleId) : undefined}
+            initialDraft={draft ?? undefined}
+            title={editingRuleId ? '编辑规则' : draft?.kind === 'virtual' ? '新建虚拟接口' : '从请求创建 Mock'}
             projects={store?.projects}
             groups={store?.groups}
             shellTemplates={store?.shellTemplates ?? []}
@@ -184,8 +285,14 @@ export function PanelApp() {
           <div style={{ width: sidePane.width, flexShrink: 0, minWidth: 0 }}>
             <DetailPane
               entry={selected}
+              rule={store?.rules.find((r) => r.id === selected.ruleId)}
               onConvert={() => convertToMock(selected)}
               onClose={() => setSelected(null)}
+              onSaveBody={saveRuleBody}
+              onSwitchVariant={(ruleId, variantId) => void switchVariant(ruleId, variantId)}
+              onCreateVariant={(rule) => void createVariant(rule)}
+              onEditRule={editRule}
+              onReplay={replayRequest}
             />
           </div>
         )
@@ -204,18 +311,11 @@ function Toolbar(props: {
   globalEnabled: boolean;
   onToggleGlobal: () => void;
   onClear: () => void;
+  onCreateVirtual: () => void;
+  onCreateRule: () => void;
 }) {
   return (
-    <div
-      className="row"
-      style={{
-        padding: '8px 10px',
-        gap: 8,
-        borderBottom: '1px solid var(--border)',
-        flexWrap: 'wrap',
-        flexShrink: 0,
-      }}
-    >
+    <div className="devtools-toolbar">
       <button
         className={props.globalEnabled ? 'primary' : ''}
         style={{ padding: '3px 9px', fontSize: 11 }}
@@ -243,6 +343,13 @@ function Toolbar(props: {
 
       <span style={{ flex: 1 }} />
 
+      <button style={{ padding: '3px 9px', fontSize: 11 }} onClick={props.onCreateRule}>
+        + Mock
+      </button>
+      <button className="primary" style={{ padding: '3px 9px', fontSize: 11 }} onClick={props.onCreateVirtual}>
+        + 虚拟接口
+      </button>
+
       <span className="muted" style={{ fontSize: 11 }}>
         {props.total} 个请求 ·{' '}
         <span className={props.mocked > 0 ? 'ok' : undefined}>{props.mocked} 个已 Mock</span>
@@ -267,14 +374,24 @@ function EntryRow({
   matchedRule,
   onConvert,
   onSelect,
+  onEditRule,
 }: {
   entry: CapturedRequest;
   selected: boolean;
   matchedRule?: Rule;
   onConvert: () => void;
   onSelect: () => void;
+  onEditRule: (rule: Rule) => void;
 }) {
-  const cls = ['req-row', entry.mocked && 'mocked', selected && 'selected']
+  // 响应体没生成出来时必须压过 mocked 的绿底 —— 「Mock 生效了」和「Mock 算错了」
+  // 是两件事，后者更紧急，不能被前者的成功色盖住
+  const genBad = entry.bodyGen && !entry.bodyGen.ok;
+  const cls = [
+    'req-row',
+    entry.mocked && 'mocked',
+    genBad && 'req-row--dynfail',
+    selected && 'selected',
+  ]
     .filter(Boolean)
     .join(' ');
 
@@ -282,7 +399,13 @@ function EntryRow({
     <div className={cls} onClick={onSelect}>
       {/* 被 Mock 的请求要一眼能认出来 —— 这是本面板存在的理由 */}
       <span style={{ width: 42, flexShrink: 0 }}>
-        {entry.mocked && <span className="tag tag-mock">MOCK</span>}
+        {genBad ? (
+          <span className="tag tag-dynfail" title={entry.bodyGen?.error}>
+            {entry.bodyGen?.kind === 'mockjs' ? '模板错' : 'JS 错'}
+          </span>
+        ) : (
+          entry.mocked && <span className="tag tag-mock">MOCK</span>
+        )}
       </span>
 
       <span className="faint mono" style={{ width: 44, flexShrink: 0 }}>
@@ -311,7 +434,7 @@ function EntryRow({
       </span>
 
       <span className="req-row__action" style={{ width: 66, flexShrink: 0 }}>
-        {!entry.mocked && (
+        {!entry.mocked ? (
           <button
             className="tiny"
             onClick={(e) => {
@@ -321,82 +444,354 @@ function EntryRow({
           >
             转为 Mock
           </button>
-        )}
+        ) : matchedRule ? (
+          <button
+            className="tiny"
+            onClick={(event) => {
+              event.stopPropagation();
+              onEditRule(matchedRule);
+            }}
+          >
+            编辑规则
+          </button>
+        ) : null}
       </span>
     </div>
   );
 }
 
+/**
+ * 请求详情 —— 左右分栏
+ *
+ * 之前是单栏竖排：元信息一条条堆上去，响应体挤在最底下一个矮 <pre> 里，
+ * 又窄又没高亮，一个几百行的接口响应根本看不了。
+ *
+ * 现在左边放元信息（固定窄栏），右边整块留给响应体 ——
+ * 响应体拿到**整个面板的高度**，这是可读性提升最大的一步。
+ * 面板本身已经能拖宽，横向不够时把它拖开就是了。
+ */
 function DetailPane({
   entry,
+  rule,
   onConvert,
   onClose,
+  onSaveBody,
+  onSwitchVariant,
+  onCreateVariant,
+  onEditRule,
+  onReplay,
 }: {
   entry: CapturedRequest;
+  /** 命中的规则。只有已 Mock 的请求才有 —— 有它才谈得上「就地编辑」 */
+  rule?: Rule;
   onConvert: () => void;
   onClose: () => void;
+  onSaveBody: (ruleId: string, variantId: string, body: string) => Promise<boolean>;
+  onSwitchVariant: (ruleId: string, variantId: string) => void;
+  onCreateVariant: (rule: Rule) => void;
+  onEditRule: (rule: Rule) => void;
+  onReplay: (entry: CapturedRequest) => Promise<{ ok: boolean; message: string }>;
 }) {
+  const [copied, setCopied] = useState(false);
+  /**
+   * 看「实际返回」还是「规则内容」。
+   *
+   * ⚠️ 这两者对 mockjs / dynamic 规则**完全不是一回事**：
+   * 实际返回是模板展开/JS 执行后的结果，规则内容才是你写的那份源码。
+   * 早期想过让响应体直接可编辑，但那样用户改的是**生成结果**，
+   * 一保存就把模板覆盖成了某一次的快照 —— 数据从此不再变化，还很难发现。
+   * 所以必须分成两个明确的视图，而不是一个含糊的「编辑」。
+   */
+  const [tab, setTab] = useState<'actual' | 'source'>('actual');
+  const [dirtyBody, setDirtyBody] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [replayState, setReplayState] = useState<'idle' | 'sending'>('idle');
+  const [replayResult, setReplayResult] = useState<{ message: string; bad: boolean } | null>(null);
+
+  const variant = rule?.variants.find((v) => v.id === rule.activeVariantId) ?? rule?.variants[0];
+  const editable = !!rule && !!variant;
+  const requestVariantChanged =
+    !!entry.variantId && !!variant && entry.variantId !== variant.id;
+  /** 生成式规则的「实际返回」是算出来的，跟源码差得远 —— 要显式告诉用户 */
+  const generated = variant ? variant.response.bodyType !== 'static' : false;
+
+  // 换请求或切变体都清掉未保存编辑，否则会把 A 变体的内容存到 B 上
+  useEffect(() => {
+    setDirtyBody(null);
+    setSaved(false);
+  }, [entry.id, variant?.id]);
+
+  // 换请求回到快照；单纯切变体则留在当前视图，方便连续配置
+  useEffect(() => setTab('actual'), [entry.id]);
+
+  /** 响应体格式化后再给编辑器 —— 原始的是压成一行的，缩进后才谈得上「可读」 */
+  const pretty = useMemo(() => {
+    const raw = entry.body;
+    if (!raw) return '';
+    try {
+      return JSON.stringify(JSON.parse(raw), null, 2);
+    } catch {
+      return raw; // 不是 JSON 就原样显示，不强行改造
+    }
+  }, [entry.body]);
+
+  const sourceBody = dirtyBody ?? variant?.response.body ?? '';
+  const dirty = dirtyBody !== null && dirtyBody !== variant?.response.body;
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(tab === 'actual' ? (entry.body ?? '') : sourceBody);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* 剪贴板不可用时用户还能自己选中复制 */
+    }
+  };
+
+  const save = async () => {
+    if (!rule || !variant || !dirty) return;
+    setSaving(true);
+    const ok = await onSaveBody(rule.id, variant.id, sourceBody);
+    setSaving(false);
+    if (ok) {
+      setDirtyBody(null);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    }
+  };
+
+  const replay = async () => {
+    setReplayState('sending');
+    const result = await onReplay(entry);
+    setReplayState('idle');
+    setReplayResult({ message: result.message, bad: !result.ok });
+    setTimeout(() => setReplayResult(null), 3500);
+  };
+
   return (
-    <div
-      style={{
-        height: '100%',
-        borderLeft: '1px solid var(--border)',
-        padding: 12,
-        overflowY: 'auto',
-      }}
-    >
-      <div className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
-        <strong style={{ fontSize: 12 }}>请求详情</strong>
-        <div className="row" style={{ gap: 6 }}>
-          {!entry.mocked && (
-            <button
-              className="primary"
-              style={{ padding: '2px 9px', fontSize: 11 }}
-              onClick={onConvert}
-            >
-              转为 Mock
-            </button>
-          )}
-          <button style={{ padding: '2px 7px', fontSize: 11 }} onClick={onClose}>
-            关闭
+    <div className="detail">
+      <div className="detail__head">
+        <strong style={{ fontSize: 12 }}>请求检查</strong>
+        {rule && (
+          <div className="detail__active-variant">
+            <span>当前 Mock</span>
+            <VariantSwitcher
+              rule={rule}
+              alwaysShow
+              onSwitch={(variantId) => onSwitchVariant(rule.id, variantId)}
+              onCreate={() => onCreateVariant(rule)}
+            />
+          </div>
+        )}
+        <span className="grow" />
+        {!entry.mocked && (
+          <button className="primary" style={{ padding: '2px 9px', fontSize: 11 }} onClick={onConvert}>
+            转为 Mock
           </button>
-        </div>
+        )}
+        {rule && (
+          <button className="tiny" onClick={() => onEditRule(rule)}>
+            完整编辑
+          </button>
+        )}
+        <button className="tiny" disabled={replayState === 'sending'} onClick={replay}>
+          {replayState === 'sending' ? '发送中…' : '重新发送'}
+        </button>
+        <button style={{ padding: '2px 7px', fontSize: 11 }} onClick={onClose}>
+          关闭
+        </button>
       </div>
 
-      <KV k="URL" v={entry.url} mono />
-      <KV k="Method" v={entry.method} />
-      <KV k="状态" v={String(entry.status ?? '—')} />
-      <KV k="来源" v={entry.api === 'xhr' ? 'XMLHttpRequest' : 'fetch'} />
-      {entry.mocked && entry.ruleName && <KV k="命中规则" v={entry.ruleName} />}
+      <div className="detail__cols">
+        {/* ── 左：元信息 ── */}
+        <div className="detail__meta">
+          <KV k="Method" v={entry.method} />
+          <KV k="状态" v={String(entry.status ?? '—')} bad={!!entry.status && entry.status >= 400} />
+          <KV k="来源" v={entry.api === 'xhr' ? 'XMLHttpRequest' : 'fetch'} />
+          {entry.durationMs != null && <KV k="耗时" v={`${entry.durationMs}ms`} />}
+          {entry.mocked && entry.ruleName && <KV k="命中规则" v={entry.ruleName} />}
+          {entry.mocked && (
+            <KV k="请求时变体" v={entry.variantName ?? '旧记录未标记'} />
+          )}
+          {requestVariantChanged && variant && <KV k="当前已切换为" v={variant.name} />}
+          <KV k="URL" v={entry.url} mono wrap />
+          {replayResult && (
+            <div className={`banner ${replayResult.bad ? 'banner-bad' : 'banner-ok'}`} style={{ marginTop: 8, fontSize: 11 }}>
+              {replayResult.message}
+            </div>
+          )}
 
-      <div style={{ marginTop: 10 }}>
-        <label>响应体{entry.truncated && '（已截断）'}</label>
-        <pre
-          className="mono"
-          style={{
-            margin: 0,
-            padding: 8,
-            maxHeight: 380,
-            overflow: 'auto',
-            background: 'var(--surface)',
-            borderRadius: 6,
-            fontSize: 11,
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-all',
-          }}
-        >
-          {entry.body ?? '（无内容）'}
-        </pre>
+          {entry.bodyGen && (
+            <div style={{ marginTop: 10 }}>
+              <label>{entry.bodyGen.kind === 'mockjs' ? 'Mock 模板' : '动态响应'}</label>
+              {entry.bodyGen.ok ? (
+                <div className={entry.bodyGen.slow ? 'warn' : 'ok'} style={{ fontSize: 11 }}>
+                  ✓ 生成成功 · {entry.bodyGen.durationMs.toFixed(1)}ms
+                  {entry.bodyGen.slow && ' —— 偏慢，翻页高频调用时可能拖慢页面'}
+                </div>
+              ) : (
+                <div className="banner banner-bad" style={{ fontSize: 11, lineHeight: 1.5 }}>
+                  ✗ {entry.bodyGen.error}
+                  {entry.bodyGen.tripped && (
+                    <div style={{ marginTop: 4 }} className="muted">
+                      已熔断，暂停执行。改完保存后会自动恢复。
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── 右：响应体，占满剩余空间 ── */}
+        <div className="detail__body">
+          <div className="trace-rail" aria-label="请求命中链路">
+            <TraceStep label="Request" value={entry.method} />
+            <TraceStep label="Rule" value={entry.ruleName ?? '未命中'} muted={!entry.mocked} />
+            <TraceStep label="Variant" value={entry.variantName ?? '—'} muted={!entry.variantName} />
+            <TraceStep
+              label="Result"
+              value={entry.status == null ? '—' : String(entry.status)}
+              bad={!!entry.status && entry.status >= 400}
+            />
+          </div>
+          <div className="detail__bodyhead">
+            {editable ? (
+              <div className="bodytype" style={{ margin: 0 }}>
+                <button
+                  className={tab === 'actual' ? 'bodytype__on' : ''}
+                  onClick={() => setTab('actual')}
+                  title="这一次请求发生时，页面实际收到的响应快照"
+                >
+                  本次响应
+                </button>
+                <button
+                  className={tab === 'source' ? 'bodytype__on' : ''}
+                  onClick={() => setTab('source')}
+                  title="当前激活变体的响应定义，可以直接修改"
+                >
+                  当前 Mock{dirty ? ' ·' : ''}
+                </button>
+              </div>
+            ) : (
+              <label style={{ margin: 0 }}>
+                响应体
+                {entry.truncated && <span className="warn"> · 已截断</span>}
+              </label>
+            )}
+
+            <span className="grow" />
+
+            {tab === 'source' && editable && (
+              <>
+                {saved && <span className="ok" style={{ fontSize: 11 }}>✓ 已保存</span>}
+                <button
+                  className={dirty ? 'primary tiny' : 'tiny'}
+                  disabled={!dirty || saving}
+                  onClick={save}
+                  title="保存到这条规则的当前变体"
+                >
+                  {saving ? '保存中…' : '保存'}
+                </button>
+              </>
+            )}
+            <span className="faint" style={{ fontSize: 10.5 }}>
+              {tab === 'actual' ? sizeOf(entry.body) : ''}
+            </span>
+            <button className="tiny ghost" onClick={copy}>
+              {copied ? '已复制' : '复制'}
+            </button>
+          </div>
+
+          {editable && (
+            <div className={`detail__mode-note${requestVariantChanged ? ' detail__mode-note--changed' : ''}`}>
+              {tab === 'actual' ? (
+                <>
+                  <strong>请求快照</strong>
+                  <span>
+                    {entry.variantName ? `由「${entry.variantName}」生成` : '记录请求当时的返回'}；
+                    切换变体不会改写这条记录。
+                  </span>
+                </>
+              ) : (
+                <>
+                  <strong>当前配置</strong>
+                  <span>
+                    正在编辑「{variant!.name}」
+                    {generated
+                      ? `的${variant!.response.bodyType === 'mockjs' ? '模板' : ' JS 源码'}`
+                      : '的响应体'}；保存后对下一次请求生效。
+                  </span>
+                </>
+              )}
+            </div>
+          )}
+
+          {tab === 'actual' ? (
+            entry.body ? (
+              <CodeEditor
+                key={`${entry.id}-actual`}
+                value={pretty}
+                onChange={() => {}}
+                readOnly
+                height="100%"
+              />
+            ) : (
+              <div className="empty" style={{ fontSize: 11 }}>（无响应体）</div>
+            )
+          ) : (
+            <CodeEditor
+              key={`${entry.id}-source-${variant?.id}`}
+              value={sourceBody}
+              onChange={setDirtyBody}
+              language={variant?.response.bodyType === 'dynamic' ? 'js' : 'json'}
+              height="100%"
+            />
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-function KV({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
+function TraceStep({ label, value, muted, bad }: { label: string; value: string; muted?: boolean; bad?: boolean }) {
   return (
-    <div style={{ marginBottom: 5 }}>
+    <span className={`trace-step${muted ? ' is-muted' : ''}${bad ? ' is-bad' : ''}`}>
+      <i />
+      <span><small>{label}</small><b title={value}>{value}</b></span>
+    </span>
+  );
+}
+
+function sizeOf(body: string | null): string {
+  if (!body) return '';
+  const bytes = new Blob([body]).size;
+  return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+function KV({
+  k,
+  v,
+  mono,
+  wrap,
+  bad,
+}: {
+  k: string;
+  v: string;
+  mono?: boolean;
+  /** 长内容（URL）才需要折行，短字段折行只会让左栏高低不齐 */
+  wrap?: boolean;
+  bad?: boolean;
+}) {
+  return (
+    <div style={{ marginBottom: 6 }}>
       <label>{k}</label>
-      <div className={mono ? 'mono' : undefined} style={{ fontSize: 11, wordBreak: 'break-all' }}>
+      <div
+        className={[mono && 'mono', bad && 'bad'].filter(Boolean).join(' ') || undefined}
+        style={{ fontSize: 11, wordBreak: wrap ? 'break-all' : 'normal' }}
+        title={v}
+      >
         {v}
       </div>
     </div>

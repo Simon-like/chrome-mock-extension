@@ -1,0 +1,315 @@
+# 项目状态与交接
+
+> 类型：Delivery Snapshot
+> 状态：Historical（仅代表 2026-08-07；不可作为当前完成度）
+> Owner：项目维护者
+> 更新：2026-08-07
+> 用途：**新会话从这里接手**。读完这一份就能知道项目在哪、下一步做什么、哪些坑不能踩。
+
+---
+
+## 0. 一句话现状
+
+MVP、v2 信息架构重构、**P0 动态响应**、**P1 Mock 模板**、**P2 MCP Server** 全部完成。
+274 个单测 + 39 项 MCP 端到端全通。代码 44 个 TS/TSX 文件。
+
+**规划里的三条主线到此走完**，MCP 已在真实 Chrome 上验证连通。
+下一步建议做**场景**（§5.4，门槛低、建在已有的变体之上）。
+
+---
+
+## 1. 这个项目是什么
+
+一个 Chrome 扩展（**Mock Studio**），让前端在浏览器里拦截并伪造接口响应。
+
+**双重目标**：
+1. 解决真实痛点 —— mock 数据不该进业务代码，配 mock 不该那么麻烦
+2. 学习 Chrome 插件开发（这是这个项目最初的立项理由）
+
+**仓库**：https://github.com/Simon-like/chrome-mock-extension
+**本地**：`~/Desktop/development/personal/chrome-mock-extension`
+
+---
+
+## 2. 文档地图
+
+按这个顺序读能看到完整的决策链。**不要跳过 03 和 05**。
+
+| 文档 | 内容 | 是否仍然有效 |
+| --- | --- | --- |
+| [市场调研与产品报告](../../product/discovery/market-and-product-research.md) | 竞品盘点、三条技术路线取舍、产品定位 | ✅ 有效（4.1/4.3/第5章已被 PRD-0001、PRD-0002 修订） |
+| [PRD-0001](../../product/prds/PRD-0001-ai-collaboration-and-virtual-endpoints.md) | AI 协同三级方案、虚拟接口、架构预留 A1–A4 | ✅ 有效 |
+| [Chrome 插件核心概念](../../guides/chrome-extension-concepts.md) | **Chrome 插件核心概念，零基础可读** | ✅ 有效，改代码前建议先读 §2 |
+| [SPIKE-0001](../../experiments/SPIKE-0001-main-world-interception.md) | 真实站点可行性验证 | ✅ 有效，§2 的结论至今仍在约束代码 |
+| [系统设计](../../architecture/system-design.md) | 数据模型、分层、消息协议，**每个决策讲了为什么** | ⚠️ 部分过时：数据模型章节已被 PRD-0002 取代，其余有效 |
+| [开发工作流](../../guides/development-workflow.md) | 热更新流程、各处 console 在哪看、构建管线 | ✅ 有效 |
+| [2026-08-05 路线图快照](./2026-08-05-roadmap.md) | P0/P1/P2 优先级与技术债 | ⚠️ 部分过时：里面的「已完成盘点」是重构前的 |
+| [PRD-0002](../../product/prds/PRD-0002-information-architecture.md) | **项目/分组/变体的最终定义**，v1→v2 迁移 | ✅ 有效，是当前数据模型的权威来源 |
+| 本文档 | 状态与交接 | — |
+| [SPIKE-0002](../../experiments/SPIKE-0002-dynamic-response.md) | 动态响应的可行性推演、实现与三道防线 | ✅ 有效，Spike 已通过、功能已落地 |
+| [Mock 模板语法](../../reference/mock-template-syntax.md) | 支持的模板子集、与 Mock.js 的差异、三种响应体怎么选 | ✅ 有效 |
+| [MCP Server](../../architecture/mcp-server.md) | MCP 的架构、三道安全校验、脱敏设计与取舍 | ✅ 有效 |
+| [MCP 使用指南](../../guides/mcp-usage.md) | **面向使用者**：怎么接、怎么用、AI 能看到什么、排查表 | ✅ 有效 |
+
+配套原型：[`design/prototype.html`](../../../design/prototype.html)（静态布局原型，可直接浏览器打开）
+
+---
+
+## 3. 已完成清单
+
+### 3.1 功能
+
+| 分类 | 内容 |
+| --- | --- |
+| **拦截引擎** | MAIN world 注入，hook `fetch` + `XMLHttpRequest`；虚拟接口（凭空造接口，不触发 404/CORS 预检） |
+| **匹配** | 包含 / 通配符 / 正则三种模式；Method 过滤；域名作用域（支持 `*.jdpay.com`、`dev*.x.com`，`*` 不跨点号）；先到先得 + 手动排序 |
+| **容器** | 项目（绑定域名）→ 分组（可折叠）→ 规则，两层都可选 |
+| **变体** | 一条规则持有多份响应，规则行上一键切换；非首个变体高亮橙色 |
+| **响应** | 状态码 / 响应头 / 响应体；延迟；外壳模板库（继承链：规则 → 分组 → 项目）；场景预设（空数据/500/401/慢 3 秒，以新建变体的方式） |
+| **DevTools 面板** | 实时请求流、被 Mock 高亮、**Capture-to-Mock**（一键转规则，自动生成真实响应/空数据/报错三个变体） |
+| **动态响应** | `bodyType: 'dynamic'` 写一段 JS，按 `req.query` / `req.path` 现算响应体 |
+| **Mock 模板** | `bodyType: 'mockjs'` 一行造一批假数据（自研子集，不引 Mock.js，**不需要 eval**）|
+| **生成防线** | 两者共用一套：编译缓存 · 连错熔断 · 错误载荷不静默 · 面板标红 · 控制台只提示一次 |
+| **选择态** | 多选后可批量删除/启停/移动分组；支持 Shift 范围选、组内全选、Esc 退出 |
+| **删除策略** | 删项目/分组时可选「保留内容」或「一并删除」，默认保留 |
+| **诊断** | 命中次数、规则遮蔽检测、未命中提示 |
+| **其他** | 导入导出 JSON、剪贴板导入、面板宽度拖拽、CodeMirror 编辑器、`Alt+M` 快捷键、扩展图标 |
+| **AI 协同 L0** | Skill（`skills/mock-rule-authoring/`），已升级到 v2 Schema |
+| **AI 协同 L2** | **MCP Server**：AI 直接看页面请求 + 写规则。12 个工具（含多变体、响应头、超时/断网、冲突检测），配对码 + Origin 双校验，强制脱敏。见 [MCP Server](../../architecture/mcp-server.md) |
+
+### 3.2 工程
+
+- Vite + CRXJS + TypeScript + React 18 + CodeMirror 6
+- **274 个单测**（vitest）+ **39 项 MCP 端到端**（`cd mcp-server && npm run e2e`），分布见 README
+- `npm run dev` 热更新链路已打通（UI 零操作 / 页面脚本刷页面 / 后台刷扩展）
+- 已配 Git 身份隔离（个人 vs 公司，见 `~/Desktop/development/GIT-身份隔离说明.md`）
+
+---
+
+## 4. 架构速览
+
+```
+src/
+├── core/          ★ 纯 TypeScript，零 chrome/DOM 依赖
+│   ├── types.ts       数据模型（v2，权威定义见 08 号 PRD）
+│   ├── engine/        matcher · responder · shell · normalize · dynamic · mockjs · bodygen
+│   ├── mcp/           出给 AI 的数据脱敏（不可关的那道线）
+│   ├── command/       Command 定义 + reducer（纯函数）
+│   ├── store/         默认值 · 版本迁移 · 校验
+│   └── capture/       Capture-to-Mock 转换
+├── hosts/         各执行环境适配层
+│   ├── inject/        MAIN world 拦截引擎 ← 实际干活的地方
+│   ├── content/       ISOLATED 中继站
+│   ├── background/    Service Worker（唯一状态持有者）
+│   ├── popup/ options/ devtools/
+├── shared/        插件内部通信约定
+└── ui/            跨页面复用组件（Switch · VariantSwitcher · CodeEditor · Splitter…）
+```
+
+**core 层铁律：不允许出现 `chrome.`、`window.`、`document.`**
+理由：同一份匹配逻辑要跑在 SW 和 MAIN world 两处；未来 MCP Server 是 Node 进程要复用；纯函数可脱离浏览器测试。
+
+---
+
+## 5. 下一步
+
+### ~~5.1 P0 · 动态响应~~ ✅ 已完成（2026-08-06）
+
+原来的最大能力缺口：只能返回固定 JSON，翻页每页数据一样、按 id 查详情永远返回同一条。
+
+现在 `bodyType: 'dynamic'` 时 `body` 存一段 JS 源码，按请求参数现算：
+
+```js
+(req) => ({
+  list: Array.from({ length: Number(req.query.size) || 10 }, (_, i) => ({
+    id: (Number(req.query.page) - 1) * 10 + i + 1,
+  })),
+  total: 48,
+})
+```
+
+完整的推演、实现与三道防线见 [SPIKE-0002](../../experiments/SPIKE-0002-dynamic-response.md)。两条必须记住的：
+
+- **「超时保护」做不到**。同线程内无法中断同步死循环，只能事后测耗时 + 熔断。
+  可接受的理由（爆炸半径只到开发者自己的调试页面）见 10 号文档 §4
+- **失败绝不静默**。返回 `__mockStudioError__` 载荷 + 面板标红 + 控制台提示一次。
+  静默返回 `{}` 的话页面会「正常」渲染空列表，开发者根本想不到是 mock 的锅
+
+### ~~5.2 P1 · Mock 假数据生成~~ ✅ 已完成（2026-08-06）
+
+`"list|10": [{ "id|+1": 1001, "name": "@ctitle" }]` 一行生成 10 条。
+
+**没有引 Mock.js，自己写了个子集** —— 注入脚本在每个页面都加载，
+Mock.js 要 20KB（gzip），自研子集只要 6KB。更重要的是**模板不需要 eval**，
+CSP 严格的站点上动态 JS 用不了、模板还能用，两条路是互补的。
+支持范围与差异见 [Mock 模板语法](../../reference/mock-template-syntax.md)。
+
+### ~~5.3 P2 · MCP Server~~ ✅ 已完成（2026-08-07）
+
+项目最初的立项理由之一，也是跟竞品拉开距离的地方 —— 现有 mock 工具全是 GUI，**AI 看不见里面发生了什么**。
+
+**价值在读侧**：`list_recent_requests(only_unmocked: true)` 直接回答「缺哪个 mock」，
+用户一句「页面没数据帮我 mock 一下」就能闭环，不用手抄 URL、不用写 JSON。
+
+A1–A4 的预留在这里全部兑现：Node 进程直接编译 `../src/core` 复用业务逻辑（A1）；
+写侧只有一条 `DISPATCH` 消息，因为扩展里本来就只有 `dispatch(command)` 一个入口（A3）。
+
+架构、三道安全校验、脱敏、工具集与接入方式见 [MCP Server](../../architecture/mcp-server.md)。
+
+### 5.4 场景（Scenario）
+
+08 号 PRD §2.3 定义了：**场景 = 一份「每条规则各选哪个变体、是否启用」的快照**。
+建在变体之上，本轮未实现。变体已经完成，现在可以做了。
+
+---
+
+## 6. 不能踩的坑
+
+这几条都是实测得出的，**改相关代码前务必知道**。
+
+### 6.1 `world: "MAIN"` + `run_at: "document_start"` 缺一不可
+
+Content script 默认跑在 ISOLATED world，和页面 JS 环境完全隔离 —— 在那里改 `window.fetch` 改的是插件自己的副本。而晚于页面脚本执行的话，页面可能已经把原始 `fetch` 存进变量了。
+
+### 6.2 注入脚本必须打成同步 IIFE
+
+CRXJS 默认把 content script 包成 loader 并用**动态 `import()`** 加载，是异步的 —— 会把 hook 安装推迟到模块加载之后，页面早期请求会漏拦，**且时序随机难以复现**。
+
+所以注入脚本走 `vite.inject.config.ts` 单独打包，构建后由 `build/injectContentScriptPlugin.ts` 补进 manifest。**dev 和 build 两条路径都要覆盖**（早期只覆盖了 build，导致 `npm run dev` 产出的扩展完全不拦截请求且无任何报错）。
+
+### 6.3 引擎健康判断必须用行为，不能用引用相等
+
+目标站点的监控/APM SDK 会在我们**之后**再包一层 `fetch`，导致 `window.fetch !== ourFetch`。但我们仍在调用链**最底层**，mock 照常生效。
+
+```js
+window.fetch === ourFetch          // ❌ 会误报
+observedCount + mockedCount > 0    // ✅ 正确
+```
+
+### 6.4 ReDoS 防线必须「事前拦截」
+
+早期设计是「测耗时超预算就拉黑」，但测试跑出来 `(a+)+$` 匹配 40 个 a 需要 **42 秒** —— 耗时检查发生在正则跑完之后，第一次的卡死根本拦不住。
+
+现在三道防线：静态检测嵌套量词**事前拒绝**、截断超长输入、耗时兜底。
+
+### 6.5 引擎代码的健壮性要求比 UI 高一个数量级
+
+`matcher` 跑在**用户的每一个请求**上。三条铁律：永远不抛异常、永远不阻塞、纯函数零副作用。快照缺字段时按空处理而非抛异常。
+
+### 6.6 复选框 = 选择，开关 = 状态。不许混用
+
+列表界面里 checkbox 的通用语义是「这一行被我选中了」。
+早期「启用/停用」也用 checkbox，于是一进批量模式，一行就出现**两个方框**，
+只能把其中一个 `disabled` 来消歧 —— 又丑又限制功能（批量时改不了启停）。
+
+现在的规矩，全项目统一：
+
+```
+☑ 复选框 = 我选了它     ●— 开关（ui/Switch.tsx）= 它开着
+```
+
+形态一区分开，两者同一行并存也不会混淆，启用开关在选择态下也不必再禁用。
+分组头的「启用组内全部」是三态（全开 / 部分 / 全关），用开关的 `partial` 态表达 ——
+比原生 checkbox 的 `indeterminate`（只能用 JS 设，没有 HTML 属性）更直白。
+
+### 6.7 三种响应体各自解决什么，别混用
+
+| bodyType | 解决 | 需要 eval |
+| --- | --- | --- |
+| `static` | 数据固定不变 | 否 |
+| `mockjs` | 要一批看起来像真的数据 | **否** ← 这是它存在的第二个理由 |
+| `dynamic` | 响应要随请求参数变 | 是 |
+
+「几份固定数据来回切」是**变体**的活，不要在动态代码里写 `if` 分支。
+
+`mockjs` 不需要 eval 这点很关键：CSP 禁了 `unsafe-eval` 的站点上 `dynamic` 直接不可用，
+`mockjs` 照常工作。所以**不能**把模板展开改成用 `new Function` 实现图省事 ——
+那会让这条唯一的退路也断掉。`tests/bodygen.test.ts` 里有一条用例盯着这件事。
+
+### 6.8 扩展自己的页面里 `eval` 是被平台禁死的
+
+MV3 强制，改不了。所以规则编辑器**不可能**预览动态响应 ——
+源码只能拿到 MAIN world 去跑。
+
+语法校验因此也不能靠「试着编译一下」，改用 CodeMirror 的 Lezer 语法树数 error 节点
+（`ui/CodeEditor.tsx`），纯静态分析。**宁可漏报也不能误报** ——
+误报会让人以为自己写错了，去改本来正确的代码。
+
+### 6.9 脱敏这种防线，光靠想是想不全的
+
+两个真实的洞，一个测试抓的，一个真实数据抓的：
+
+1. `Authorization: Bearer eyJ...` 第一版只打掉「Bearer」这个词，真 token 原样漏出去
+2. 接上真实公司接口后第一次拉请求，登录接口返回的 `email` / `nick` / `orgName`
+   全部原样出给了 AI —— 第一版只防「凭证类」键名，PII 完全没考虑
+
+第二个洞的关键在于：**e2e 里的假扩展喂的是我自己造的干净数据，永远暴露不了它。**
+单测能证明「我防的那些确实防住了」，证明不了「我没防的那些不重要」。
+
+现在的分工：**键名**匹配防凭证，**值的形状**防 JWT / 邮箱 / 手机号 / 身份证。
+按值识别是刻意的选择 —— 把 `mobile` 加进键名表会误伤 `isMobile` 这种布尔字段，
+而键名叫 `nick` / `contact` 的邮箱又照样漏。
+
+**还有拦不住的**（姓名、部门、接口路径、业务数据），已在 12/13 号文档写明边界。
+不写清楚的话，用户会以为「开了脱敏就安全了」，那比不做脱敏更危险。
+
+### 6.10 长连接的状态要「算」，不要「存」
+
+MCP 桥第一版把 `status = 'connected'` 存下来，只在 onclose 时改。结果是
+**对端进程都退出了，界面还显示已连接**。
+
+根因：**半开 socket 上 `send()` 只是写进本地缓冲区，不抛错、不触发 onclose。**
+所以「我还在发」证明不了「它还在收」。只发不验的心跳等于没有心跳。
+
+现在两条都要有，职责不能混：
+
+| | 做什么 | 目的 |
+| --- | --- | --- |
+| 心跳 | 定期**发** | 保活 Service Worker（Chrome 116+ WS 收发重置空闲计时器）|
+| 看门狗 | 看有多久没**收** | 发现死连接 |
+
+状态由 `Date.now() - lastSeenAt` 算出来，不是存下来的。
+
+配套的另一条：**接受新连接时必须显式关掉同角色的旧连接**。第一版只写了
+`this.client = ws`，扩展每重连一次就漏一个 socket，堆成一片半开连接。
+清理要用 `terminate()` 不是 `close()` —— 对端不在了，四次挥手等不到回应。
+
+### 6.11 macOS 文件系统大小写不敏感
+
+`panel.tsx` 和 `Panel.tsx` 会撞成同一个文件。组件文件名已改为 `PanelApp.tsx`。
+
+---
+
+## 7. 遗留技术债
+
+| 项 | 说明 |
+| --- | --- |
+| `host_permissions` 仍是 `<all_urls>` | 上架前应改为 `optional_host_permissions` 运行时申请 |
+| 05 号文档数据模型章节过时 | 已被 08 号 PRD 取代，但文档本身没删除对应章节 |
+| 07 号文档「已完成盘点」过时 | 是 v2 重构前的状态 |
+| ~~MCP 未做真实浏览器验证~~ | ✅ 2026-08-07 已验：真实 Chrome 扩展成功连上桥并响应 `get_status`。Chrome 的 WS 行为、Origin 头、配对码、SW 应答全部走通。**仍未验**：SW 被回收后 `chrome.alarms` 兜底重连（要等浏览器真的回收它才看得到） |
+| 未做 E2E 测试 | 274 个单测覆盖 core 与注入层，但没有「装进真实 Chrome 跑一遍」的自动化 |
+| 请求面板无虚拟滚动 | 请求超过几百条时可能卡顿 |
+| 分组间拖拽只能改归属，不能同时定位顺序 | 拖进组会追加到末尾 |
+
+---
+
+## 8. 新会话怎么开始
+
+给新会话的建议开场：
+
+> 我在做一个 Chrome 扩展 Mock Studio，代码在 `~/Desktop/development/personal/chrome-mock-extension`。
+> 先读 `docs/README.md`、`docs/governance/global-constraints.md` 和相关 PRD/架构文档，然后 [具体任务]。
+
+**如果要继续开发**：P0/P1/P2 三条主线都完成了。建议先补 §7 里那条「MCP 未做真实浏览器验证」，再做 §5.4 的场景。
+
+**常用命令**：
+
+```bash
+npm run dev      # 开发模式（UI 热更新 + 注入脚本自动重建）
+npm run build    # 完整构建
+npm test         # 274 个测试
+```
+
+装扩展：`chrome://extensions` → 开发者模式 → 加载已解压的扩展程序 → 选 **`dist/`** 目录。
+**只需加载一次**，之后改代码最多点刷新 ↻。

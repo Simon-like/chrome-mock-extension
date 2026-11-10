@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mock Studio · Workbench Prototype Review</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body data-theme="circuit">
+    <header class="reviewbar">
+      <div class="reviewbar__brand">
+        <span class="mark">M</span>
+        <div><b>Mock Studio</b><small>工作台原型评审 · 2026.08</small></div>
+      </div>
+      <nav class="segmented" aria-label="选择原型页面">
+        <button class="is-active" data-view="options">管理工作台</button>
+        <button data-view="devtools">DevTools 面板</button>
+      </nav>
+      <div class="palette-picker" aria-label="选择配色方向">
+        <button class="palette" data-theme="signal"><i class="swatch swatch--signal"></i>A · Signal Blue</button>
+        <button class="palette is-active" data-theme="circuit"><i class="swatch swatch--circuit"></i>B · Circuit Teal · 默认</button>
+        <button class="palette" data-theme="slate"><i class="swatch swatch--slate"></i>C · Slate Violet</button>
+      </div>
+    </header>
+
+    <main class="stage">
+      <section class="prototype is-active" data-prototype="options" aria-label="管理工作台原型">
+        <div class="app-shell">
+          <aside class="project-rail">
+            <div class="rail-head"><span class="product-dot"></span><b>Mock Studio</b><button class="icon-button" title="收起项目栏">‹</button></div>
+            <label class="search search--rail"><span>⌕</span><input value="" placeholder="搜索项目" /></label>
+            <div class="rail-label"><span>项目</span><button>＋</button></div>
+            <button class="project-item"><span class="project-icon">C</span><span>跨境支付</span><em>12</em></button>
+            <button class="project-item"><span class="project-icon">P</span><span>持续支付</span><em>7</em></button>
+            <div class="rail-label rail-label--other">其他</div>
+            <button class="project-item is-active"><span class="project-icon project-icon--archive">⌁</span><span>未归档</span><em>2</em></button>
+            <div class="rail-foot"><span class="health-dot"></span><span>MCP 已连接</span><kbd>8700</kbd></div>
+          </aside>
+
+          <section class="rule-workspace">
+            <header class="workspace-head">
+              <div><span class="eyebrow">RULE WORKSPACE</span><h1>未归档</h1><p>从上往下匹配，第一条命中的规则生效</p></div>
+              <label class="master-switch"><span>Mock 总开关</span><input type="checkbox" checked /><i></i></label>
+            </header>
+            <div class="workspace-tabs"><button class="is-active">规则 <span>2</span></button><button>Activity <span>77</span></button></div>
+            <div class="commandbar">
+              <button class="primary-action">＋ 新建规则</button>
+              <label class="search"><span>⌕</span><input placeholder="搜索规则名或 URL" /></label>
+              <button class="filter-button">筛选 <span>1</span></button>
+              <span class="spacer"></span>
+              <button class="quiet-action">选择</button>
+              <button class="more-button" data-more>更多 ···</button>
+            </div>
+            <div class="group-title"><button>⌄</button><b>未分组</b><span>1 / 2 生效</span><i></i></div>
+
+            <div class="rule-list">
+              <article class="rule-card">
+                <div class="priority">01</div>
+                <button class="toggle is-off"><i></i></button>
+                <span class="kind kind--cover">覆盖</span>
+                <div class="rule-copy"><strong>POST api</strong><code>/api?v=1.0&amp;appId=tradeOrderQueryProvider</code><small>尚未命中过 · 若预期已生效，请检查匹配条件</small></div>
+                <span class="response-pill">真实响应</span>
+                <div class="rule-stats"><b>0</b><small>命中</small></div>
+              </article>
+
+              <article class="rule-card is-selected">
+                <div class="priority">02</div>
+                <button class="toggle is-on"><i></i></button>
+                <span class="kind kind--cover">覆盖</span>
+                <div class="rule-copy"><strong>queryAccBalance 账户余额查询</strong><code>api=dsm.jdf.portal.accBalanceQueryProvider.queryAccBalance</code><small><b>POST</b><i>200</i><span>6 个变体</span></small></div>
+                <button class="variant-trigger is-alt" data-variant-trigger><span>空数据-无账户</span><i>⌄</i></button>
+                <div class="rule-stats"><b>9</b><small>命中</small></div>
+                <button class="row-more">···</button>
+              </article>
+            </div>
+            <footer class="workspace-foot"><span>2 条规则 · 1 条启用</span><span>最近保存 20:18:42</span></footer>
+          </section>
+
+          <aside class="inspector">
+            <header class="inspector-head">
+              <div><span class="eyebrow">RULE INSPECTOR</span><h2>账户余额查询</h2></div>
+              <div><button class="quiet-action">关闭</button><button class="save-button" data-save>保存更改</button></div>
+            </header>
+            <div class="inspector-scroll">
+              <section class="form-section">
+                <div class="section-heading"><span class="step">1</span><div><b>匹配请求</b><small>定义哪一个请求会使用这条规则</small></div></div>
+                <label class="field"><span>规则名称</span><input value="queryAccBalance 账户余额查询" /></label>
+                <div class="kind-choice"><button class="is-active"><b>覆盖已有接口</b><small>拦截真实请求并返回 Mock</small></button><button><b>新建虚拟接口</b><small>后端尚未提供该接口</small></button></div>
+                <label class="field"><span>URL 匹配</span><div class="compound"><select><option>包含</option></select><input value="api=dsm.jdf.portal.accBalanceQueryProvider.queryAccBalance" /></div></label>
+                <div class="method-row"><span>请求方法</span><button>GET</button><button class="is-active">POST</button><button>PUT</button><button>DELETE</button></div>
+              </section>
+
+              <section class="form-section">
+                <div class="section-heading"><span class="step">2</span><div><b>选择响应变体</b><small>下一次命中将使用当前变体</small></div><button class="add-variant">＋ 新变体</button></div>
+                <div class="variant-tabs"><button>正常-多币种账户</button><button class="is-active">空数据-无账户 <i>当前</i></button><button>账户冻结</button><button>业务报错</button><button>HTTP 500</button></div>
+                <div class="variant-summary"><span class="status-dot"></span><div><b>空数据-无账户</b><small>HTTP 200 · 无延迟 · 静态 JSON</small></div><span class="next-use">下一次生效</span></div>
+              </section>
+
+              <section class="form-section form-section--response">
+                <div class="section-heading"><span class="step">3</span><div><b>定义响应</b><small>这里编辑的是配置，不是历史请求</small></div></div>
+                <div class="response-tabs"><button class="is-active">静态 JSON</button><button>Mock 模板</button><button>动态 JS</button><span></span><button>格式化</button></div>
+                <div class="code-editor"><ol><li>1</li><li>2</li><li>3</li><li>4</li><li>5</li><li>6</li><li>7</li><li>8</li></ol><pre><span>{</span>
+  <b>"msg"</b>: <em>"成功"</em>,
+  <b>"code"</b>: <strong>200</strong>,
+  <b>"data"</b>: {
+    <b>"jdfAccList"</b>: [],
+    <b>"merchantNo"</b>: <em>"110108000123456"</em>
+  }
+<span>}</span></pre></div>
+              </section>
+
+              <button class="advanced" data-advanced><span>高级响应设置</span><small>响应头、延迟和异常行为</small><i>⌄</i></button>
+              <div class="advanced-panel" data-advanced-panel><label class="field"><span>延迟</span><input value="0 ms" /></label><label class="field"><span>响应外壳</span><select><option>继承分组 / 项目默认</option></select></label></div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="prototype" data-prototype="devtools" aria-label="DevTools 原型">
+        <div class="devtools-shell">
+          <aside class="request-rail">
+            <header><b>Mock</b><label class="master-switch master-switch--small"><input type="checkbox" checked /><i></i></label></header>
+            <label class="search"><span>⌕</span><input placeholder="筛选 URL" /></label>
+            <div class="capture-count"><span>77 个请求</span><b>13 个已 Mock</b></div>
+            <div class="rail-actions"><button>＋ Mock</button><button>＋ 虚拟接口</button></div>
+            <div class="request-list">
+              <button><span>POST</span><b>200</b><small>318ms</small></button>
+              <button><span>GET</span><b>200</b><small>52ms</small></button>
+              <button class="is-selected"><i>MOCK</i><span>POST</span><strong>queryAccBalance</strong><b>200</b><small>126ms</small></button>
+              <button><span>POST</span><b>200</b><small>340ms</small></button>
+              <button class="is-error"><span>GET</span><b>404</b><small>19ms</small></button>
+              <button><span>POST</span><b>200</b><small>192ms</small></button>
+            </div>
+          </aside>
+          <section class="request-inspector">
+            <header class="request-head">
+              <div><span class="eyebrow">REQUEST INSPECTOR</span><h2>queryAccBalance</h2></div>
+              <div class="current-mock"><small>当前 Mock</small><button class="variant-trigger is-alt" data-variant-trigger><span>空数据-无账户</span><i>⌄</i></button><button class="add-current">完整编辑</button><button class="add-current">↻ 重新发送</button></div>
+            </header>
+            <div class="trace-rail" data-trace>
+              <div class="trace-node is-complete"><i>1</i><span>Request</span><b>POST</b></div><em></em>
+              <div class="trace-node is-complete"><i>2</i><span>Rule match</span><b>账户余额查询</b></div><em></em>
+              <div class="trace-node is-current"><i>3</i><span>Variant</span><b data-trace-variant>空数据-无账户</b></div><em></em>
+              <div class="trace-node is-complete"><i>4</i><span>Result</span><b>200 · 126ms</b></div>
+            </div>
+            <div class="request-body">
+              <aside class="request-meta"><dl><dt>状态</dt><dd class="ok">200 OK</dd><dt>来源</dt><dd>XMLHttpRequest</dd><dt>命中规则</dt><dd>账户余额查询</dd><dt>请求时变体</dt><dd>正常-多币种账户</dd><dt>当前已切换为</dt><dd class="warn" data-current-label>空数据-无账户</dd><dt>URL</dt><dd class="mono">/api?v=1.0&amp;api=dsm.jdf.portal.accBalanceQueryProvider.queryAccBalance</dd></dl></aside>
+              <section class="response-view">
+                <div class="snapshot-tabs"><button class="is-active">本次响应</button><button>当前 Mock</button><span></span><button>复制</button></div>
+                <div class="context-note"><b>请求快照</b><span>由「正常-多币种账户」生成；切换变体不会改写这条记录。</span></div>
+                <div class="code-editor code-editor--devtools"><ol><li>1</li><li>2</li><li>3</li><li>4</li><li>5</li><li>6</li><li>7</li><li>8</li></ol><pre><span>{</span>
+  <b>"msg"</b>: <em>"成功"</em>,
+  <b>"code"</b>: <strong>200</strong>,
+  <b>"data"</b>: {
+    <b>"jdfAccList"</b>: [],
+    <b>"merchantNo"</b>: <em>"110108000123456"</em>
+  }
+<span>}</span></pre></div>
+              </section>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <div class="floating-menu" data-variant-menu aria-hidden="true">
+      <div class="menu-label">切换当前变体</div>
+      <button data-variant="正常-多币种账户"><i></i><span><b>正常-多币种账户</b><small>200 · 静态 JSON</small></span></button>
+      <button class="is-active" data-variant="空数据-无账户"><i>✓</i><span><b>空数据-无账户</b><small>200 · 空列表</small></span></button>
+      <button data-variant="账户冻结"><i></i><span><b>账户冻结</b><small>200 · 部分冻结</small></span></button>
+      <button data-variant="业务报错"><i></i><span><b>业务报错</b><small>200 · code 非 200</small></span></button>
+      <button data-variant="HTTP 500"><i></i><span><b>HTTP 500</b><small>500 · 网关异常</small></span></button>
+      <div class="menu-separator"></div><button class="menu-add"><i>＋</i><span><b>基于当前新增变体</b><small>复制响应后立即激活</small></span></button>
+    </div>
+    <div class="toast" data-toast><i>✓</i><span>规则已保存，下一次请求生效</span></div>
+    <script src="./app.js"></script>
+  </body>
+</html>

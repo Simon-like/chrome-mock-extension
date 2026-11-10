@@ -33,12 +33,23 @@
 | **起步方式** | 空白表单，手填 URL 和 JSON | DevTools 里点一下真实请求，响应自动填好 |
 | **数据归属** | 要登录、规则存云端 | 全部本地，永不上传，共享靠导出 JSON |
 | **新增接口** | 多数只能改已有接口 | 支持凭空造接口（后端还没写也能开工） |
-| **AI 协作** | 只有给人点的 GUI | 规则是 AI 的一等公民，可直接生成并导入 |
+| **AI 协作** | 只有给人点的 GUI，AI 看不见里面发生了什么 | **MCP Server**：AI 直接看页面实际发了哪些请求、直接写规则 |
 | **响应格式** | 全局配一次 | 模板库 + 规则级选择，还能从真实响应自动识别 |
 
 ---
 
 ## 快速开始
+
+### 方式 A：GitHub Release（推荐，不用构建）
+
+1. 在 [Releases](../../releases) 下载 `mock-studio-extension-v*.zip` 并解压
+2. 打开 `chrome://extensions` → 开启右上角 **开发者模式**
+3. 点 **加载已解压的扩展程序**，选择解压出来的目录
+4. **刷新你要调试的页面** —— 拦截脚本只在页面加载时注入
+
+装好后扩展会自动打开引导页，跟着三步走即可。
+
+### 方式 B：从源码构建
 
 ```bash
 git clone git@github.com:Simon-like/chrome-mock-extension.git
@@ -47,12 +58,7 @@ npm install
 npm run build
 ```
 
-装进 Chrome：
-
-1. 打开 `chrome://extensions`
-2. 开启右上角 **开发者模式**
-3. 点 **加载已解压的扩展程序**，选择 **`dist/`** 目录 ← 注意是 `dist/`，不是项目根目录
-4. **刷新你要调试的页面** —— 拦截脚本只在页面加载时注入
+然后同上，加载 **`dist/`** 目录（注意是 `dist/`，不是项目根目录）。
 
 想确认装好没有：用浏览器打开项目里的 `testbed/index.html`，点「检查引擎」。
 
@@ -152,6 +158,84 @@ Skill 生成的 JSON 会经过结构自愈，以下非标准写法也能被接�
 
 所以即使 AI 记错了格式，多半也能导进去。
 
+导入和 MCP 新建都会自动整理归属：优先按域名创建或复用项目，再按接口路径中第一个
+有效业务段创建或复用分组。升级到 schema v3 时，历史未分组规则也会执行同样的无损整理；
+无法判断域名的规则只进入全局分组，不会猜测项目，更不会自动删除或停用。
+
+#### 存储容量
+
+规则保存在 `chrome.storage.local`。本扩展最低支持 Chrome 116，因此默认配额约为 **10 MB**；
+它按 JSON 字节数计费，不存在固定“最多多少条规则”。响应体越大，可存条数越少。
+设置页会显示当前占用，并按现有规则平均大小估算总容量；写入超限时会拒绝本次修改，
+不会让内存状态和已保存状态分叉。
+
+### 让 AI 直接操作（MCP）
+
+上面那套要你复制 JSON、点导入。**接上 MCP 之后这些都不用了。**
+
+```
+你：页面没数据，帮我 mock 一下
+
+AI  → get_page_context
+      在当前活动标签页看到 GET /api/goods/list 返回 404
+    → get_request_detail(body_mode: "schema")
+      用结构摘要确认前端在传 page / size / keyword
+    → create_mock(kind: "virtual", body_type: "mockjs", ...)
+      自动归档到当前域名项目和 goods 业务分组
+
+你：刷新页面 → 有数据了
+```
+
+你只说了一句话。没有手抄 URL，没有写 JSON，AI 也没有猜接口长什么样。
+
+**读侧才是关键**。写规则 AI 本来就会，剪贴板导入也能凑合；
+真正没有替代品的是**让 AI 看到页面实际发了哪些请求** —— 这是 GUI 工具给不了的。
+
+**接上只需要一分钟，配对码只需粘贴一次：**
+
+在规则管理页点右上角 **MCP** → 开启 → 然后任选一种。面板里的安装和复制按钮会先保存设置，再生成接入动作：
+
+| 你的客户端 | 操作 |
+| --- | --- |
+| Cursor / VS Code | 点面板里的 **保存并安装按钮**（配对码已内嵌，弹确认框同意即可） |
+| Claude Code / Codex | 复制面板里的官方 `mcp add` 命令，在终端跑 |
+| Kimi Code | 复制面板里的 `install --client kimi-code` 命令；配置后**新建会话**生效 |
+| Kimi CLI 旧版 / DSH | 展开面板的「更多客户端」，复制对应命令 |
+| 多客户端 / 其他情况 | 任意目录跑 `npx -y mock-studio-mcp install --token <配对码>` —— 自动检测已安装客户端，写前备份；也可用 `--client` 精确选择、`--print` 预览 |
+| 本地仓库版（未走 npm） | 在仓库根目录跑面板「本地开发版与手动配置」里的 `install` 命令 |
+
+除 Kimi Code 新建会话外，其余客户端按面板提示重启。DSH 使用原生 `cordis.patch.yml`：安装器只自动创建空配置或更新自己标记的 YAML 块，已有复杂配置会跳过自动修改并给出手动合并提示。
+
+> 客户端配置长这样 —— **没有任何本地路径**（要求 Node 18+）：
+>
+> ```json
+> {
+>   "mcpServers": {
+>     "mock-studio": {
+>       "command": "npx",
+>       "args": ["-y", "mock-studio-mcp"],
+>       "env": { "MOCK_STUDIO_TOKEN": "<扩展面板里的配对码>" }
+>     }
+>   }
+> }
+> ```
+>
+> 不用再做的事：手动 `pwd` 核对路径、把配对码逐个客户端贴 N 遍、关心 `dist/` 有几层目录。
+> MCP Server 已发布到 npm（[`mock-studio-mcp`](https://www.npmjs.com/package/mock-studio-mcp)）；
+> 本地仓库版则是零依赖单文件 `mcp-server/dist/bundle/mock-studio-mcp.mjs`。
+
+**一分钟接上的完整步骤、常用说法、排查表 → [MCP 使用指南](./docs/guides/mcp-usage.md)**
+
+> **安全**：只监听 `127.0.0.1`；`Origin` 必须是 `chrome-extension://`（挡掉所有网页）；
+> 配对码挡掉本机其他进程。出给 AI 的数据**强制脱敏且不可关闭** ——
+> 凭证按键名打码，JWT / 邮箱 / 手机号 / 身份证按**值的形状**打码，
+> 脱敏发生在**扩展侧**（数据离开之前），就算端口被别的进程连上，拿到的也已经是打过码的。
+>
+> ⚠️ 但**真实姓名、部门、接口路径、业务数据拦不住** —— 涉密项目请关掉读侧，
+> 或用域名白名单只放行测试环境。边界说明见 [使用指南 §4](./docs/guides/mcp-usage.md)。
+>
+> 实现与设计取舍见 [MCP Server](./docs/architecture/mcp-server.md)。
+
 ---
 
 ## 功能
@@ -180,14 +264,41 @@ Skill 生成的 JSON 会经过结构自愈，以下非标准写法也能被接�
 **项目与分组**
 
 - **项目**：按系统划分，**绑定域名**（白/黑名单，支持 `*.jdpay.com` 通配）
-- **分组**：业务模块归拢，可折叠；复选框是批量启用/停用组内规则，三态显示
+- **分组**：业务模块归拢，可折叠；组头的开关批量启用/停用组内规则，三态显示
 - 两层都可选 —— 不建项目也能直接用
-- 归组支持拖拽和下拉；支持批量选择后批量删除/启停/移动
+- 归组支持拖拽和下拉；点「选择」进入选择态后可批量删除/启停/移动
+
+> 控件语义全项目统一：**☑ 复选框 = 选中这一行，●— 开关 = 它开着**。
+> 两种形态不混用，所以选择态下启停开关照样能点。
 
 **响应构造**
 
 - 自定义状态码、响应头、响应体
-- CodeMirror 编辑器：语法高亮、折叠、实时校验、格式化
+- **动态响应**：写一段 JS，按请求参数现算 —— 翻页、按 id 查详情、搜索终于能测了
+
+  ```js
+  (req) => ({
+    list: Array.from({ length: Number(req.query.size) || 10 }, (_, i) => ({
+      id: (Number(req.query.page) - 1) * 10 + i + 1,
+    })),
+    total: 48,
+  })
+  ```
+
+- **Mock 模板**：一行造一批看起来像真的数据
+
+  ```json
+  { "list|10": [{ "id|+1": 1001, "name": "@ctitle", "price|10-999.2": 1 }] }
+  ```
+
+  自研子集，没引 Mock.js —— 注入脚本每个页面都加载，Mock.js 要 20KB（gzip），
+  这份只要 6KB。而且**模板不需要 eval**，CSP 禁了 `unsafe-eval` 的站点上
+  动态 JS 用不了、模板还能用。语法见 [Mock 模板语法](./docs/reference/mock-template-syntax.md)。
+
+  两者出错都不会静默：响应体里带 `__mockStudioError__`，DevTools 面板标红，
+  控制台提示一次，同一条规则连错 3 次自动熔断。
+- CodeMirror 编辑器：JSON / JS 双模式、语法高亮、折叠、实时校验、格式化
+- 三种响应体一键切换，各自配好起手模板
 - 场景预设：空数据 / 500 / 401 / 慢 3 秒
 - 响应外壳模板库（`{status,message,data}` 等），支持自定义，Capture 时自动识别
 
@@ -224,11 +335,10 @@ Skill 生成的 JSON 会经过结构自愈，以下非标准写法也能被接�
 
 ### 尚未实现
 
-**动态响应（按参数生成数据）** ← 当前最大缺口 · Mock.js 假数据生成 ·
 场景（批量切换变体的快照）· 改请求头/请求体 · 录制模式 · HAR 导入 ·
-MCP Server · GraphQL 按 operationName 匹配
+GraphQL 按 operationName 匹配
 
-优先级与技术前提见 [09 项目状态与交接](./docs/09-项目状态与交接.md#5-下一步)。
+2026-08-07 当时的优先级与技术前提见[项目交接快照](./docs/delivery/snapshots/2026-08-07-project-handoff.md#5-下一步)；它是历史快照，不代表当前完成度。
 
 ---
 
@@ -239,6 +349,8 @@ src/
 ├── core/          ★ 纯 TypeScript，零 chrome / DOM 依赖
 │   ├── types.ts       规则数据模型（系统地基）
 │   ├── engine/        matcher · responder · shell · normalize
+│   │                  dynamic（跑 JS）· mockjs（展开模板）· bodygen（缓存+熔断）
+│   ├── mcp/           出给 AI 的数据脱敏（不可关的那道线）
 │   ├── command/       Command 定义 + reducer（纯函数）
 │   ├── store/         默认值 · 版本迁移 · 校验
 │   └── capture/       Capture-to-Mock 转换
@@ -251,8 +363,11 @@ src/
 │   ├── options/       规则管理
 │   └── devtools/      Mock 面板
 │
-├── shared/        插件内部通信约定
+├── shared/        插件内部通信约定（含 MCP 桥协议）
 └── ui/            跨页面复用的 React 组件
+
+mcp-server/        ★ 独立 Node 进程：stdio 接 MCP 客户端，WebSocket 接扩展
+└── src/           直接编译 ../src/core 复用业务逻辑，不走 npm 依赖
 ```
 
 ### core 层的铁律
@@ -262,7 +377,7 @@ src/
 三个具体理由，不是为了代码整洁这种虚的：
 
 1. **同一份匹配逻辑要跑在两个地方** —— Service Worker 和 MAIN world 都需要它
-2. **未来的 MCP Server 是 Node 进程**，那里没有 `chrome` 对象，但要复用同一套业务逻辑
+2. **MCP Server 是 Node 进程**，那里没有 `chrome` 对象 —— 它现在直接编译 `src/core` 复用 matcher/reducer，这条铁律已经兑现了
 3. **纯函数可以脱离浏览器测试** —— 不用启动 Chrome，不用 mock chrome API
 
 ### 数据流
@@ -278,7 +393,7 @@ src/
           Popup      DevTools 面板   各 Tab 的引擎
 ```
 
-所有状态变更（UI 点击、Capture 转规则、未来的 AI 下发）都走**同一个 `dispatch(Command)` 入口**。
+所有状态变更（UI 点击、Capture 转规则、**AI 通过 MCP 下发**）都走**同一个 `dispatch(Command)` 入口**。
 单一入口 = 单一真相 = 单一 bug 面。
 
 ---
@@ -297,7 +412,7 @@ Content script 默认跑在 **ISOLATED world**，和页面的 JS 环境完全隔
 
 而如果晚于页面脚本执行，页面可能已经把原始 `fetch` 存进变量了，再改 `window.fetch` 也没用。
 
-→ [知识扫盲 §2](./docs/03-知识扫盲：Chrome插件核心概念.md)
+→ [Chrome 插件核心概念 §2](./docs/guides/chrome-extension-concepts.md)
 
 </td></tr>
 <tr><td><b>2</b></td><td>
@@ -323,7 +438,7 @@ window.fetch === ourFetch              // ❌ 会误报
 observedCount + mockedCount > 0        // ✅ 正确
 ```
 
-→ [Spike 验证结论 §2](./docs/04-Spike验证结论.md)
+→ [SPIKE-0001 验证结论 §2](./docs/experiments/SPIKE-0001-main-world-interception.md)
 
 </td></tr>
 </table>
@@ -335,7 +450,7 @@ observedCount + mockedCount > 0        // ✅ 正确
 ```bash
 npm run dev            # 开发模式：UI 热更新 + 注入脚本自动重建
 npm run build          # 完整构建（类型检查 + 注入脚本 + 主构建）
-npm test               # 156 个单元测试
+npm test               # 289 个单元测试
 npm run typecheck      # 只做类型检查
 ```
 
@@ -352,19 +467,27 @@ npm run typecheck      # 只做类型检查
 
 一句话：**UI 改动零操作，页面脚本刷页面，后台脚本刷扩展。**
 
-完整说明见 [06 开发工作流](./docs/06-开发工作流.md)。
+完整说明见[开发工作流](./docs/guides/development-workflow.md)。
 
 ### 测试
 
 | 文件 | 数量 | 覆盖 |
 | --- | --- | --- |
 | `tests/matcher.test.ts` | 31 | 三种匹配模式边界、ReDoS 防护、host / method 过滤 |
-| `tests/groups.test.ts` | 34 | 项目、分组、域名通配、批量操作、删除策略、外壳继承链 |
-| `tests/responder.test.ts` | 19 | 响应构造、外壳套用与识别、Capture-to-Mock 转换 |
+| `tests/groups.test.ts` | 37 | 项目、分组、域名通配、批量操作、删除策略、外壳继承链 |
+| `tests/responder.test.ts` | 26 | 响应构造、外壳套用与识别、Capture-to-Mock 转换、动态响应集成 |
 | `tests/reducer.test.ts` | 17 | 所有 Command 的行为与纯函数性 |
-| `tests/variants.test.ts` | 16 | **变体**：切换、增删、深拷贝、生效态回落 |
-| `tests/migrate.test.ts` | 19 | **v1→v2 迁移**与结构自愈 |
-| `tests/inject.test.ts` | 20 | **注入层**：fetch / XHR 拦截、fail-open、延迟、健壮性 |
+| `tests/variants.test.ts` | 18 | **变体**：切换、增删、编辑器原子保存、生效态回落 |
+| `tests/migrate.test.ts` | 20 | **v1→v2 迁移**、结构自愈、新增设置项的补齐 |
+| `tests/inject.test.ts` | 23 | **注入层**：fetch / XHR 拦截、fail-open、延迟、健壮性 |
+| `tests/dynamic.test.ts` | 16 | **动态响应**：两种写法编译、执行降级、序列化边界 |
+| `tests/mockjs.test.ts` | 39 | **Mock 模板**：数量/递增/浮点规则、占位符、护栏、确定性 |
+| `tests/bodygen.test.ts` | 15 | **生成运行时**：编译缓存、连错熔断、报告去重 |
+| `tests/redact.test.ts` | 41 | **脱敏**（安全边界）：敏感键识别、JWT、URL / 响应体、白名单通配 |
+| `tests/responseDetail.test.ts` | 6 | **MCP 数据面**：JSON 结构摘要、UTF-8 字节上限、游标续读 |
+
+共 **289 个单元测试**。另有 **44 项 MCP 端到端**（`cd mcp-server && npm run e2e`）：
+用假扩展冒充 Chrome 侧，验证握手、Origin/配对码拒绝、活动标签页隔离、响应分级读取、读写闭环与多客户端共享。跑的是编译产物。
 
 注入层测试跑在 happy-dom 里真实执行 hook 逻辑 —— 伪造 XHR 响应是全项目最容易写错的地方
 （原型上的只读 getter、事件派发时序），手工验证成本高且容易漏边界。
@@ -399,28 +522,18 @@ npm run typecheck      # 只做类型检查
 | 改了代码不生效 | 改 `src/hosts/inject/` 需要重新 build + 刷新扩展 + 刷新页面 |
 | 某条规则永不命中 | 看是否有「被上方规则遮蔽」的警告 —— 匹配是先到先得 |
 
-各类脚本的 console 分别在哪看：[知识扫盲 §8](./docs/03-知识扫盲：Chrome插件核心概念.md)
+各类脚本的 console 分别在哪看：[Chrome 插件核心概念 §8](./docs/guides/chrome-extension-concepts.md)
 
 ---
 
 ## 文档
 
-这个项目的文档是**先于代码**写的，记录了每个决策的来龙去脉。按顺序读能看到完整的思考过程。
+文档现在按职责管理，不再按创建序号串成一条时间线。统一从[文档中心](./docs/README.md)进入：那里区分了全局约束、产品 PRD、技术设计、ADR、可行性 Spike、操作指南、精确参考和历史交付快照。
 
-| | 内容 |
-| --- | --- |
-| [01 市场调研与产品报告](./docs/01-市场调研与产品报告.md) | 竞品盘点、三条技术路线的取舍、产品定位与差异化 |
-| [02 需求补充](./docs/02-需求补充：AI协同与虚拟接口.md) | AI 协同三级方案、虚拟接口、为 MCP 做的架构预留 |
-| [03 知识扫盲](./docs/03-知识扫盲：Chrome插件核心概念.md) | Chrome 插件核心概念，零基础可读 |
-| [04 Spike 验证结论](./docs/04-Spike验证结论.md) | 真实站点上的可行性验证结果 |
-| [05 技术方案设计](./docs/05-技术方案设计.md) | 数据模型、分层、消息协议，**每个决策都讲了为什么** |
-| [06 开发工作流](./docs/06-开发工作流.md) | 热更新流程、各处 console 在哪看、构建管线为何这样设计 |
-| [07 下阶段规划](./docs/07-下阶段规划.md) | 优先级排序与技术债（部分内容已被 08、09 更新） |
-| [08 信息架构重构 PRD](./docs/08-信息架构重构PRD.md) | **项目 / 分组 / 变体的权威定义**，v1→v2 迁移方案 |
-| [**09 项目状态与交接**](./docs/09-项目状态与交接.md) | **当前进度、下一步、不能踩的坑** —— 接手先读这份 |
+准备修改代码时，先读[全局约束](./docs/governance/global-constraints.md)与[架构总览](./docs/architecture/README.md)；准备提功能时，从 [PRD 模板](./docs/governance/templates/prd-template.md)开始。
 
 `spike/` 目录保留了最初的可行性验证代码，是一个不依赖任何构建工具的最小插件，
-适合对照 03 号文档理解 Chrome 插件的运行机制。
+适合对照 [Chrome 插件核心概念](./docs/guides/chrome-extension-concepts.md)理解运行机制。
 
 ---
 

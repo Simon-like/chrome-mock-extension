@@ -16,6 +16,7 @@ import {
 import { buildResponse } from '../src/core/engine/responder.js';
 import { normalizeRequest } from '../src/core/engine/normalize.js';
 import { validateRule } from '../src/core/store/validate.js';
+import { migrate } from '../src/core/store/migrate.js';
 import type { MockStore } from '../src/core/types.js';
 
 function makeCtx(): ReduceContext {
@@ -125,6 +126,77 @@ describe('SET_ACTIVE_VARIANT —— 最高频操作', () => {
     );
     expect(out.result.ok).toBe(false);
     expect(out.store).toBe(s);
+  });
+});
+
+describe('SAVE_RULE_DRAFT —— 编辑器整单保存', () => {
+  it('保存选中的第二个变体，并在重新加载后仍保持生效', () => {
+    const ctx = makeCtx();
+    const initial = withRule(createDefaultStore(), ctx, [
+      { name: '正常', body: '{"list":[1]}' },
+      { name: '空数据', body: '{"list":[]}' },
+    ]).store;
+    const rule = initial.rules[0]!;
+
+    const saved = reduce(
+      initial,
+      {
+        type: 'SAVE_RULE_DRAFT',
+        payload: {
+          id: rule.id,
+          draft: {
+            name: rule.name,
+            enabled: rule.enabled,
+            projectId: rule.projectId,
+            groupId: rule.groupId,
+            kind: rule.kind,
+            match: rule.match,
+            variants: rule.variants,
+            activeVariantIndex: 1,
+          },
+        },
+      },
+      ctx,
+    ).store;
+
+    const reloaded = migrate(JSON.parse(JSON.stringify(saved))).store;
+    expect(getActiveVariant(reloaded.rules[0]!).name).toBe('空数据');
+  });
+
+  it('给编辑器新建的无 id 变体补 id，并能在同一次保存中激活', () => {
+    const ctx = makeCtx();
+    const initial = withRule(createDefaultStore(), ctx, [{ name: '正常', body: '{"x":1}' }]).store;
+    const rule = initial.rules[0]!;
+
+    const out = reduce(
+      initial,
+      {
+        type: 'SAVE_RULE_DRAFT',
+        payload: {
+          id: rule.id,
+          draft: {
+            name: rule.name,
+            enabled: rule.enabled,
+            projectId: rule.projectId,
+            groupId: rule.groupId,
+            kind: rule.kind,
+            match: rule.match,
+            variants: [
+              rule.variants[0]!,
+              { name: '报错', response: createResponseSpec({ status: 500, body: '{"error":true}' }) },
+            ],
+            activeVariantIndex: 1,
+          },
+        },
+      },
+      ctx,
+    );
+
+    const active = getActiveVariant(out.store.rules[0]!);
+    expect(out.result.ok).toBe(true);
+    expect(active.name).toBe('报错');
+    expect(active.id).toMatch(/^id-/);
+    expect(active.response.status).toBe(500);
   });
 });
 

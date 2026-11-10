@@ -16,6 +16,13 @@ import type { Group, Project, ResponseSpec, Rule, RuleDraft, Settings } from '..
 export type Command =
   // ── 规则 ──
   | { type: 'CREATE_RULE'; payload: { draft: RuleDraft } }
+  /**
+   * 编辑器整单保存。
+   *
+   * RuleDraft 用 activeVariantIndex 表示选中项，且新变体可以没有 id；
+   * 不能把它偷塞进 UPDATE_RULE，否则 activeVariantId 不会更新、无 id 变体也会落库。
+   */
+  | { type: 'SAVE_RULE_DRAFT'; payload: { id: string; draft: RuleDraft } }
   | {
       type: 'UPDATE_RULE';
       payload: {
@@ -72,7 +79,7 @@ export type Command =
   | { type: 'DELETE_VARIANT'; payload: { ruleId: string; variantId: string } }
   | { type: 'REORDER_VARIANT'; payload: { ruleId: string; variantId: string; toIndex: number } }
   // ── 项目 ──
-  | { type: 'CREATE_PROJECT'; payload: { name: string } }
+  | { type: 'CREATE_PROJECT'; payload: { name: string; activate?: boolean } }
   | { type: 'UPDATE_PROJECT'; payload: { id: string; patch: Partial<Omit<Project, 'id'>> } }
   /**
    * 删除项目。cascade 决定其下的分组与规则怎么办：

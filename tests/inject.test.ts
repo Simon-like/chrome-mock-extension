@@ -378,6 +378,70 @@ describe('上报', () => {
     expect(hit!.entry!.ruleName).toBe('上报测试');
     expect(hit!.entry!.ruleId).toBe(r.id);
   });
+
+  it('保存可安全重放的 fetch 请求头和文本请求体', async () => {
+    const r = rule({
+      match: { urlMode: 'contains', url: '/api/replayable', methods: [], hosts: [] },
+      variants: [{ name: '默认', response: createResponseSpec() }],
+    });
+    await pushSnapshot(snapshotOf([r]));
+
+    reported.length = 0;
+    await fetch('/api/replayable', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-case': 'replay' },
+      body: '{"name":"Mock Studio"}',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const hit = reported.find((event) => String(event.entry?.url).includes('/api/replayable'));
+    expect(hit, JSON.stringify(reported)).toBeDefined();
+    expect(hit?.entry?.replay).toEqual({
+      headers: { 'content-type': 'application/json', 'x-case': 'replay' },
+      body: '{"name":"Mock Studio"}',
+      bodyUnavailable: false,
+    });
+  });
+
+  it('不读取 FormData 等不可安全序列化的请求体', async () => {
+    const r = rule({
+      match: { urlMode: 'contains', url: '/api/upload', methods: [], hosts: [] },
+      variants: [{ name: '默认', response: createResponseSpec() }],
+    });
+    await pushSnapshot(snapshotOf([r]));
+
+    const form = new FormData();
+    form.set('name', 'fixture');
+    reported.length = 0;
+    await fetch('/api/upload', { method: 'POST', body: form });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const hit = reported.find((event) => String(event.entry?.url).includes('/api/upload'));
+    expect(hit, JSON.stringify(reported)).toBeDefined();
+    expect(hit?.entry?.replay).toEqual({ headers: {}, body: null, bodyUnavailable: true });
+  });
+
+  it('保存 XHR 的请求头和文本请求体用于重放', async () => {
+    const r = rule({
+      match: { urlMode: 'contains', url: '/api/xhr-replay', methods: [], hosts: [] },
+      variants: [{ name: '默认', response: createResponseSpec() }],
+    });
+    await pushSnapshot(snapshotOf([r]));
+
+    reported.length = 0;
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/xhr-replay');
+    xhr.setRequestHeader('content-type', 'application/x-www-form-urlencoded');
+    xhr.send('name=fixture');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const hit = reported.find((event) => String(event.entry?.url).includes('/api/xhr-replay'));
+    expect(hit?.entry?.replay).toEqual({
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'name=fixture',
+      bodyUnavailable: false,
+    });
+  });
 });
 
 describe('健壮性：引擎绝不能拖垮页面', () => {

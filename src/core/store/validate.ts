@@ -125,6 +125,51 @@ function validateResponse(r: ResponseSpec): ValidationIssue[] {
     }
   }
 
+  /**
+   * Mock 模板本身就是 JSON，可以直接验 —— 模板写错是最常见的失误，
+   * 而且验起来零成本（不像 dynamic 那样需要求值）。
+   */
+  if (r.bodyType === 'mockjs') {
+    const src = (r.body ?? '').trim();
+    if (!src) {
+      issues.push({ level: 'error', field: 'body', message: 'Mock 模板不能为空' });
+    } else {
+      try {
+        JSON.parse(src);
+      } catch (e) {
+        issues.push({
+          level: 'error',
+          field: 'body',
+          message: `Mock 模板不是合法 JSON：${(e as Error).message}`,
+        });
+      }
+    }
+  }
+
+  /**
+   * 动态响应只做**不需要求值**的检查。
+   *
+   * 语法错误交给编辑器的语法树（core 里没有解析器，而且 validate 也跑在 SW，
+   * 那边同样禁 eval）。这里只拦「一看就不会返回数据」这类低级失误 ——
+   * 拦不住的部分由运行时熔断兜底，请求面板会标红。
+   */
+  if (r.bodyType === 'dynamic') {
+    const src = (r.body ?? '').trim();
+    if (!src) {
+      issues.push({
+        level: 'error',
+        field: 'body',
+        message: '动态响应的代码不能为空',
+      });
+    } else if (!/\breturn\b/.test(src) && !src.includes('=>')) {
+      issues.push({
+        level: 'warning',
+        field: 'body',
+        message: '代码里没有 return 也没有箭头函数，多半不会返回任何数据',
+      });
+    }
+  }
+
   if (r.delayMs < 0) {
     issues.push({ level: 'error', field: 'delayMs', message: '延迟不能为负' });
   }
