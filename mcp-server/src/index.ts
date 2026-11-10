@@ -30,7 +30,7 @@ import { registerTools } from './tools.js';
 import { registerPrompts } from './prompts.js';
 import { DEFAULT_BRIDGE_PORT } from '../../src/core/types.js';
 
-const VERSION = '0.2.0';
+const VERSION = '1.0.0-beta';
 
 /** 日志一律 stderr —— stdout 是 MCP 协议专用的 */
 function log(...args: unknown[]): void {

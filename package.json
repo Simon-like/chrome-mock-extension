@@ -1,6 +1,6 @@
 {
   "name": "mock-studio",
-  "version": "0.2.0",
+  "version": "1.0.0-beta",
   "description": "AI 可编程的本地 Mock 运行时 —— Chrome 扩展",
   "private": true,
   "type": "module",

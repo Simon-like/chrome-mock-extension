@@ -4,7 +4,8 @@ import pkg from './package.json' with { type: 'json' };
 export default defineManifest({
   manifest_version: 3,
   name: 'Mock Studio',
-  version: pkg.version,
+  version: pkg.version.replace(/[-+].*$/, ''),
+  version_name: pkg.version,
   description: 'AI 可编程的本地 Mock 运行时',
 
   // WebSocket 保活需要 116+（V2 的 MCP 长连），提前声明避免将来改

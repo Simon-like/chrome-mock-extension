@@ -1,6 +1,6 @@
 {
   "name": "mock-studio-mcp",
-  "version": "0.2.0",
+  "version": "1.0.0-beta",
   "private": false,
   "type": "module",
   "description": "Mock Studio 的 MCP Server —— 让 AI 看到页面实际发了哪些请求，并直接写 mock 规则",

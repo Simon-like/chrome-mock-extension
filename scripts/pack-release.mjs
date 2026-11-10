@@ -62,37 +62,27 @@ execFileSync('node', [join(outDir, mcpName), 'install', '--help'], { stdio: 'pip
 
 writeFileSync(
   join(outDir, 'INSTALL.md'),
-  `# Mock Studio v${version} 安装包
+  `# 安装 Mock Studio v${version}
 
-## 1. 装扩展（30 秒）
+1. 下载并解压 \`${zipName}\`。
+2. 用 Chrome 116 或更新版本打开 \`chrome://extensions\`，开启 **开发者模式**。
+3. 点 **加载已解压的扩展程序**，选择包含 \`manifest.json\` 的目录。
+4. 首次安装会打开带上手提示的规则管理页。刷新要调试的网页，再打开开发者工具的 **Mock** 面板。
 
-解压 \`${zipName}\`，打开 \`chrome://extensions\` → 右上角开「开发者模式」→
-「加载已解压的扩展程序」→ 选中解压出来的目录。
+在 **Mock** 面板里选择一条请求，点 **转为 Mock**，修改响应并保存。重新触发该请求即可查看效果。
 
-## 2. 接 MCP（让 AI 直接操作，1 分钟）
+## 可选 · 接入 AI
 
-方式 A（推荐）：扩展装好后会自动打开引导页；或在规则管理页点右上角
-**MCP** → 启用 → 用面板里的「一键装进 Cursor / VS Code」或 Claude Code 命令。
-
-方式 B（命令行）：在任意目录跑
+在规则管理页打开 **MCP**，启用后复制配对码。使用 Node.js 18 或更新版本运行同一个 Release 提供的 MCP 文件：
 
 \`\`\`bash
-node ${mcpName} install
+node /path/to/${mcpName} install --token '<配对码>'
 \`\`\`
 
-按提示粘贴一次扩展里的配对码，会自动写进所有已安装的 AI 客户端
-（Claude Code / Cursor / VS Code / Windsurf / Claude Desktop），写前自动备份。
-
-## 3. 验证
-
-对你的 AI 说：「页面没数据，帮我 mock 一下」。
+按安装器提示确认目标客户端，再重启客户端或新建会话。安装后保留 MCP 文件的位置，客户端会通过该路径启动它。
 `,
 );
 
 console.log(`\n✓ release/${zipName}`);
 console.log(`✓ release/${mcpName}`);
 console.log(`✓ release/INSTALL.md`);
-console.log(`\n挂到 GitHub Release：`);
-console.log(
-  `  gh release create v${version} release/${zipName} release/${mcpName} release/INSTALL.md --title "v${version}" --notes "见 INSTALL.md"`,
-);
